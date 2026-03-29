@@ -51,6 +51,12 @@ def get_parser():
     parser.add_argument('--grl_num_nodes', default=64, type=int, help='number of visual graph nodes in GRL')
     parser.add_argument('--grl_num_steps', default=2, type=int, help='number of GAT+GCN reasoning steps in GRL')
     parser.add_argument('--grl_drop', default=0.1, type=float, help='dropout rate for GRL graph attention')
+    parser.add_argument(
+        '--grl_mode',
+        default='full',
+        choices=['full', 'no_parser', 'off'],
+        help='GRL ablation mode: full uses the fine-grained parser, no_parser keeps GRL but disables structured parsing, off bypasses GRL entirely.',
+    )
     return parser
 
 

@@ -342,6 +342,7 @@ class GraphReasoningChain(nn.Module):
         num_reasoning_steps: int = 2,
         num_steps: Optional[int] = None,
         dropout: float = 0.1,
+        grl_mode: str = "full",
         tokenizer_name: Optional[str] = None,
         dataset_name: Optional[str] = None,
     ):
@@ -356,6 +357,10 @@ class GraphReasoningChain(nn.Module):
         self.num_reasoning_steps = max(1, num_reasoning_steps)
         self.num_relation_types = 14  # 11 geo relations + 3 scale relations
         self.multiscale_strides = (1, 2, 4)
+        valid_modes = {"full", "no_parser", "off"}
+        if grl_mode not in valid_modes:
+            raise ValueError(f"Unsupported grl_mode={grl_mode}. Expected one of {sorted(valid_modes)}")
+        self.grl_mode = grl_mode
 
         self.visual_proj = nn.Conv2d(in_channels, hidden_dim, kernel_size=1)
         self.text_proj = nn.Conv1d(text_dim, hidden_dim, kernel_size=1)
@@ -420,6 +425,36 @@ class GraphReasoningChain(nn.Module):
         self.refine_alpha = nn.Parameter(torch.tensor(0.0))
 
         self.text_parser = FineGrainedTextParser(tokenizer_name=tokenizer_name, dataset_name=dataset_name)
+
+    @staticmethod
+    def _build_unparsed_batch(l_mask: torch.Tensor) -> List[Dict[str, Any]]:
+        if l_mask.dim() == 3:
+            l_mask_2d = l_mask.squeeze(-1)
+        else:
+            l_mask_2d = l_mask
+
+        batch: List[Dict[str, Any]] = []
+        B, N = l_mask_2d.shape
+        for b in range(B):
+            valid_len = int(l_mask_2d[b].float().sum().item())
+            valid_len = max(1, min(valid_len, N))
+            batch.append(
+                {
+                    "target": {"word": None, "token_span": None},
+                    "entities": [],
+                    "attributes": [],
+                    "relations": [],
+                    "tokens": [],
+                    "entity_attributes": {},
+                    "spatial_triplets": [],
+                    "entity_tokens_map": {},
+                    "attr_tokens_map": {},
+                    "rel_tokens_map": {},
+                    "reasoning_units": [(0, valid_len)],
+                    "valid_len": valid_len,
+                }
+            )
+        return batch
 
     @staticmethod
     def _masked_mean(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -751,6 +786,9 @@ class GraphReasoningChain(nn.Module):
         text_struct: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
         # x: [B, C, H, W], l: [B, D_text, N]
+        if self.grl_mode == "off":
+            return x
+
         B, _, H, W = x.shape
 
         vis_map_all = self.visual_proj(x)  # [B, D, H, W]
@@ -761,7 +799,9 @@ class GraphReasoningChain(nn.Module):
         if l_mask.dim() == 2:
             l_mask = l_mask.unsqueeze(-1)
 
-        if text_struct is not None and isinstance(text_struct, dict) and "batch" in text_struct:
+        if self.grl_mode == "no_parser":
+            parse_batch = self._build_unparsed_batch(l_mask)
+        elif text_struct is not None and isinstance(text_struct, dict) and "batch" in text_struct:
             parse_batch = text_struct["batch"]
         elif text_struct is not None and isinstance(text_struct, dict) and "target" in text_struct:
             parse_batch = [text_struct for _ in range(B)]

@@ -425,6 +425,7 @@ class MultiModalSwinTransformer(nn.Module):
                  grl_num_nodes=64,
                  grl_num_steps=2,
                  grl_drop=0.1,
+                 grl_mode='full',
                  grl_tokenizer_name=None,
                  grl_dataset_name=None
                  ):
@@ -496,6 +497,7 @@ class MultiModalSwinTransformer(nn.Module):
             num_visual_nodes=grl_num_nodes,
             num_steps=grl_num_steps,
             dropout=grl_drop,
+            grl_mode=grl_mode,
             tokenizer_name=grl_tokenizer_name,
             dataset_name=grl_dataset_name,
         )
@@ -912,4 +914,3 @@ class SpatialImageLanguageAttention(nn.Module):
         out = out.permute(0, 2, 1)  # (B, HW, value_channels)
 
         return out
-

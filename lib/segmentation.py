@@ -54,6 +54,7 @@ def _segm_lavt(pretrained, args):
                                          grl_num_nodes=getattr(args, 'grl_num_nodes', 64),
                                          grl_num_steps=getattr(args, 'grl_num_steps', 2),
                                          grl_drop=getattr(args, 'grl_drop', 0.1),
+                                         grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
                                          grl_dataset_name=getattr(args, 'dataset', None)
                                          )
@@ -130,6 +131,7 @@ def _segm_lavt_one(pretrained, args):
                                          grl_num_nodes=getattr(args, 'grl_num_nodes', 64),
                                          grl_num_steps=getattr(args, 'grl_num_steps', 2),
                                          grl_drop=getattr(args, 'grl_drop', 0.1),
+                                         grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
                                          grl_dataset_name=getattr(args, 'dataset', None),
                                          )
