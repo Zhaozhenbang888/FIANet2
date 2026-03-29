@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+.idea/
+.vscode/
+
+# Large local datasets
+data/
+NWPU-refer/
+RRSIS-D/
+RISBench_dataset/
+
+# Model weights and checkpoints
+*.pth
+*.pt
+*.ckpt
+*.bin
+
+# Runtime artifacts
+*.log
