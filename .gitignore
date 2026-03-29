@@ -11,7 +11,6 @@ env/
 .vscode/
 
 # Large local datasets
-data/
 NWPU-refer/
 RRSIS-D/
 RISBench_dataset/
