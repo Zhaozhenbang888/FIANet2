@@ -13,6 +13,24 @@ import os
 import sys
 
 
+def _sanitize_path_component(value):
+    value = str(value).strip()
+    if not value:
+        return "default"
+    for ch in ('<', '>', ':', '"', '/', '\\', '|', '?', '*'):
+        value = value.replace(ch, '-')
+    return value
+
+
+def resolve_experiment_output_dir(base_output_dir, model_id, dataset, grl_mode):
+    return os.path.join(
+        base_output_dir,
+        _sanitize_path_component(model_id),
+        _sanitize_path_component(dataset),
+        _sanitize_path_component(grl_mode),
+    )
+
+
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
     window or the global series average.

@@ -228,10 +228,18 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
 
 
 def main(args):
+    args.dataset = normalize_dataset_name(args.dataset)
+    args.output_dir = utils.resolve_experiment_output_dir(
+        args.output_dir,
+        args.model_id,
+        args.dataset,
+        getattr(args, 'grl_mode', 'full'),
+    )
 
     # make folders
     if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+        os.makedirs(args.output_dir)
+    print('Checkpoint directory: {}'.format(args.output_dir))
 
     # set datasets
     print("\n[***] Set Datasets")
