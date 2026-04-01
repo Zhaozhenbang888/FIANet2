@@ -149,6 +149,7 @@ class ReferDataset(data.Dataset):
         self.target_cls = set(NWPU_ENTITIES)
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_tokenizer)
         self.eval_mode = eval_mode
+        target_fallback_count = 0
 
         for sentence_raw in self.sentences:
             attention_mask = [0] * self.max_tokens
@@ -167,19 +168,26 @@ class ReferDataset(data.Dataset):
 
             self.sentences_raw.append(sentence_raw)
             tokenized_sentence = word_tokenize(sentence_raw)
+            tokenized_sentence_lower = [token.lower() for token in tokenized_sentence]
+            sentence_lower = sentence_raw.lower()
 
             for cls_name in self.target_cls:
-                if re.findall(cls_name, sentence_raw):
+                cls_name_lower = cls_name.lower()
+                if re.search(re.escape(cls_name_lower), sentence_lower):
                     tokenized_cls = word_tokenize(cls_name)
                     cls_len = len(tokenized_cls)
+                    tokenized_cls_lower = [token.lower() for token in tokenized_cls]
                     cls_start = 0
                     for idx, token in enumerate(tokenized_sentence):
-                        if re.findall(tokenized_cls[0], token):
+                        if tokenized_cls_lower and tokenized_cls_lower[0] == tokenized_sentence_lower[idx]:
                             cls_start = idx
                             break
                     target_token_mask[cls_start + 1 : cls_start + cls_len + 1] = [1] * cls_len
-
-            self.target_masks.append([torch.tensor(target_token_mask).unsqueeze(0)])
+            target_tensor = torch.tensor(target_token_mask).unsqueeze(0)
+            if torch.sum(target_tensor) == 0:
+                target_tensor = self.attention_masks[-1][0]
+                target_fallback_count += 1
+            self.target_masks.append([target_tensor])
 
             grammar = r"""
             PP: {<IN><DT>?<JJ.*>?<NN>}
@@ -210,6 +218,13 @@ class ReferDataset(data.Dataset):
             if torch.sum(position_tensor) == 0:
                 position_tensor = self.attention_masks[-1][0]
             self.position_masks.append([position_tensor])
+
+        if len(self.sentences) > 0:
+            fallback_ratio = target_fallback_count / float(len(self.sentences))
+            print(
+                f"NWPU target-mask fallback: {target_fallback_count}/{len(self.sentences)} "
+                f"({fallback_ratio:.2%})"
+            )
 
     def get_classes(self):
         return self.classes
