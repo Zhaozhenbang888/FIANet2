@@ -1,6 +1,7 @@
 import os
 import json
 import pickle
+from collections import Counter
 
 import numpy as np
 import torch
@@ -9,7 +10,12 @@ from PIL import Image
 from pycocotools import mask as mask_utils
 
 from bert.tokenization_bert import BertTokenizer
-from data.nwpu_text_adapter import build_prompt_spec, canonicalize_category_name
+from data.nwpu_text_adapter import (
+    build_prompt_spec,
+    canonicalize_category_name,
+    classify_text_language,
+    text_matches_language_filter,
+)
 
 
 def _resolve_nwpu_paths(data_root):
@@ -48,13 +54,14 @@ def _match_split(ref_split, target_split):
     return False
 
 
-def _build_samples(data_root, split):
+def _build_samples(data_root, split, language_filter="all"):
     image_dir, refs, images_by_id, anns_by_id, categories_by_id = _load_instances_and_refs(data_root)
 
     all_images = []
     all_ann_ids = []
     all_category_ids = []
     all_sentences = []
+    language_counter = Counter()
 
     for ref in refs:
         ref_split = ref.get("split", "")
@@ -78,12 +85,19 @@ def _build_samples(data_root, split):
             sentence = sent.get("raw", "").strip()
             if not sentence:
                 continue
+            sentence_language = classify_text_language(sentence)
+            language_counter[sentence_language] += 1
+            if not text_matches_language_filter(sentence, language_filter):
+                continue
             all_images.append(img_path)
             all_ann_ids.append(ann_id)
             all_category_ids.append(category_id)
             all_sentences.append(sentence)
 
-    print(f"NWPU-refer split={split} loaded: {len(all_images)} samples")
+    print(
+        f"NWPU-refer split={split} lang={language_filter} loaded: {len(all_images)} samples "
+        f"(available languages: {dict(language_counter)})"
+    )
     return all_images, all_ann_ids, all_category_ids, all_sentences, anns_by_id, categories_by_id
 
 
@@ -152,6 +166,7 @@ class ReferDataset(data.Dataset):
         self.max_tokens = 22
 
         data_root = args.nwpu_data_root if getattr(args, "nwpu_data_root", "") else args.refer_data_root
+        language_filter = getattr(args, "nwpu_lang", "all")
         (
             self.imgs,
             self.ann_ids,
@@ -159,7 +174,7 @@ class ReferDataset(data.Dataset):
             self.sentences,
             self.anns_by_id,
             self.categories_by_id,
-        ) = _build_samples(data_root, split)
+        ) = _build_samples(data_root, split, language_filter=language_filter)
 
         self.input_ids = []
         self.attention_masks = []

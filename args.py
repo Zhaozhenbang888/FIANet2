@@ -32,6 +32,12 @@ def get_parser():
     parser.add_argument('--refer_data_root', default='C:/Dataset/refer_seg/RefSegRS/', help='REFER dataset root directory')
     parser.add_argument('--nwpu_data_root', default='',
                         help='NWPU-refer dataset root; fallback to refer_data_root when empty')
+    parser.add_argument(
+        '--nwpu_lang',
+        default='all',
+        choices=['all', 'english', 'chinese'],
+        help='language subset for NWPU-refer: all keeps every sentence, english keeps English-only sentences, chinese keeps Chinese-only sentences.',
+    )
     parser.add_argument('--rsibench_data_root', default='',
                         help='RSIBench_dataset root; fallback to refer_data_root when empty')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
