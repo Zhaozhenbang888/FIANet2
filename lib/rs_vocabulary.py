@@ -12,16 +12,16 @@ The lexicons are rule-based, deterministic, and require no training.
 # ============================================================================
 
 NWPU_ENTITIES = {
-    # NWPU dataset targets (for NWPU-refer dataset)
-    "airplane", "airport", "baseball field", "basketball court", "bridge",
-    "chimney", "church", "circular farmland", "cloud", "dam", "dense residential",
-    "desert", "expressway service area", "forest", "golf field", "ground track field",
-    "harbor", "industrial area", "island", "lake", "meadow", "medium residential",
-    "mobile home park", "mountain", "overpass", "parking lot", "railway", "railway station",
-    "rectangular farmland", "river", "roundabout", "runway", "sea ice", "ship",
-    "snowberg", "sparse residential", "stadium", "storage tank", "straight road",
-    "tennis court", "terrace", "thermal power station", "toll station", "tower",
-    "train station", "truck", "turbine", "vehicle", "windmill", "working land"
+    # NWPU-refer categories from new_instances.json
+    "car", "ship", "photovolatic", "building", "airplane", "road", "bridge",
+    "basketball court", "container", "train", "pool", "storage tank", "tennis court",
+    "ground track field", "football court", "pylon", "digger", "wind turbine",
+    "construction tower", "road intersection", "parking", "baseball court", "river",
+    "chimney", "airplaneroad", "ocean", "land", "rugby court", "lake", "grass",
+    "badminton court", "dam", "no target",
+    # aliases used by the NWPU text adapter for English prompts
+    "solar panel", "photovoltaic panel", "stadium", "parking lot", "runway", "sea",
+    "tower", "tower crane", "soccer field"
 }
 
 RRSISD_ENTITIES = {
