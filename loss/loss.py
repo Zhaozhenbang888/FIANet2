@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 
+from loss.class_weights import compute_balanced_class_weights
+
 
 class DiceLoss:
     "Dice loss for segmentation"
@@ -52,12 +54,26 @@ class DiceLoss:
 
 
 class Loss():
-    def __init__(self, weight=0.1):
+    def __init__(self, weight=0.1, max_fg_weight=20.0, fg_weight_exponent=0.5):
         self.dice_loss = DiceLoss()
-        self.ce_loss = torch.nn.CrossEntropyLoss(weight=torch.FloatTensor([0.9, 1.1]).cuda())
         self.weight = weight
+        self.max_fg_weight = max_fg_weight
+        self.fg_weight_exponent = fg_weight_exponent
+
+    def _compute_ce_weight(self, targ):
+        foreground_count = torch.count_nonzero(targ).item()
+        total_count = targ.numel()
+        background_count = total_count - foreground_count
+        bg_weight, fg_weight = compute_balanced_class_weights(
+            background_count,
+            foreground_count,
+            max_fg_weight=self.max_fg_weight,
+            exponent=self.fg_weight_exponent,
+        )
+        return torch.tensor([bg_weight, fg_weight], device=targ.device, dtype=torch.float32)
 
     def __call__(self, pred, targ):
         dice_loss = self.dice_loss(pred, targ)
-        ce_loss = self.ce_loss(pred, targ)
+        ce_weight = self._compute_ce_weight(targ)
+        ce_loss = torch.nn.functional.cross_entropy(pred, targ, weight=ce_weight)
         return (1 - self.weight) * ce_loss + self.weight * dice_loss
