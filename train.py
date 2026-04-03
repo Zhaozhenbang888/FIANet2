@@ -1,4 +1,4 @@
-import datetime
+﻿import datetime
 import os
 import time
 import torch
@@ -13,6 +13,7 @@ import operator
 from functools import reduce
 from bert.modeling_bert import BertModel
 from lib import segmentation
+from debug_helpers import format_foreground_stats, make_foreground_stats, update_foreground_stats
 from loss.loss import Loss
 
 os.environ["WANDB_API_KEY"] = '1ae5903bce9def26f040e6a15cc95aba3a99cc91'
@@ -112,11 +113,17 @@ def evaluate(model, data_loader, bert_model, epoch):
     seg_total = 0
     mean_IoU = []
     total_loss = 0
+    debug_target_stats = make_foreground_stats()
+    debug_pred_stats = make_foreground_stats()
+    debug_pred_empty_with_target = 0
+    debug_fg_logit_mean_sum = 0.0
+    debug_fg_logit_max_sum = 0.0
+    debug_bg_logit_mean_sum = 0.0
 
     with torch.no_grad():
         for data in metric_logger.log_every(data_loader, 100, header):
             total_its += 1
-            image, target, sentences, attentions, target_masks, position_masks, _ = data
+            image, target, sentences, attentions, target_masks, position_masks, sample_keys = data
             image = image.cuda(non_blocking=True)
             target = target.cuda(non_blocking=True)
             sentences = sentences.cuda(non_blocking=True)
@@ -131,14 +138,37 @@ def evaluate(model, data_loader, bert_model, epoch):
 
             if bert_model is not None:
                 last_hidden_states = bert_model(sentences, attention_mask=attentions)[0]
-                embedding = last_hidden_states.permute(0, 2, 1)  # (B, 768, N_l) to make Conv1d happy
-                attentions = attentions.unsqueeze(dim=-1)  # (B, N_l, 1)
+                embedding = last_hidden_states.permute(0, 2, 1)
+                attentions = attentions.unsqueeze(dim=-1)
                 output = model(image, embedding, l_mask=attentions)
             else:
                 output = model(image, sentences, attentions, target_masks, position_masks)
 
             iou, I, U = IoU(output, target)
             loss = criterion(output, target)
+            pred = output.argmax(1)
+            target_fg_pixels = int(torch.count_nonzero(target).item())
+            pred_fg_pixels = int(torch.count_nonzero(pred).item())
+            total_pixels = int(target.numel())
+
+            update_foreground_stats(debug_target_stats, target_fg_pixels, total_pixels)
+            update_foreground_stats(debug_pred_stats, pred_fg_pixels, total_pixels)
+            debug_pred_empty_with_target += int(pred_fg_pixels == 0 and target_fg_pixels > 0)
+            debug_fg_logit_mean_sum += output[:, 1].mean().item()
+            debug_fg_logit_max_sum += output[:, 1].max().item()
+            debug_bg_logit_mean_sum += output[:, 0].mean().item()
+
+            if getattr(args, "debug_diagnostics", False) and total_its <= getattr(args, "debug_log_first_n", 3):
+                sample_key = sample_keys[0] if isinstance(sample_keys, (list, tuple)) else sample_keys
+                print(
+                    f"[Debug][Eval][Sample {total_its}] key={sample_key} "
+                    f"target_fg={target_fg_pixels}/{total_pixels} ({target_fg_pixels / max(total_pixels, 1):.4%}) "
+                    f"pred_fg={pred_fg_pixels}/{total_pixels} ({pred_fg_pixels / max(total_pixels, 1):.4%}) "
+                    f"iou={iou:.6f} "
+                    f"fg_logit_mean={output[:, 1].mean().item():.4f} "
+                    f"fg_logit_max={output[:, 1].max().item():.4f} "
+                    f"bg_logit_mean={output[:, 0].mean().item():.4f}"
+                )
             total_loss += loss.item()
             acc_ious += iou
             mean_IoU.append(iou)
@@ -160,6 +190,17 @@ def evaluate(model, data_loader, bert_model, epoch):
                        (str(eval_seg_iou_list[n_eval_iou]), seg_correct[n_eval_iou] * 100. / seg_total)
     results_str += '    overall IoU = %.2f\n' % (cum_I * 100. / cum_U)
     print(results_str)
+    if getattr(args, "debug_diagnostics", False):
+        print(f"[Debug][Eval][Epoch {epoch}] {format_foreground_stats('target', debug_target_stats)}")
+        print(f"[Debug][Eval][Epoch {epoch}] {format_foreground_stats('pred', debug_pred_stats)}")
+        print(
+            f"[Debug][Eval][Epoch {epoch}] pred_empty_with_nonempty_target="
+            f"{debug_pred_empty_with_target}/{debug_target_stats['samples']} "
+            f"({debug_pred_empty_with_target / max(debug_target_stats['samples'], 1):.2%}) "
+            f"mean_fg_logit={debug_fg_logit_mean_sum / max(total_its, 1):.4f} "
+            f"mean_fg_logit_max={debug_fg_logit_max_sum / max(total_its, 1):.4f} "
+            f"mean_bg_logit={debug_bg_logit_mean_sum / max(total_its, 1):.4f}"
+        )
 
     if args.local_rank == 0:
         wandb.log({
@@ -178,31 +219,52 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
     header = 'Epoch: [{}]'.format(epoch)
     train_loss = 0
     total_its = 0
+    debug_target_stats = make_foreground_stats()
+    debug_pred_stats = make_foreground_stats()
+    debug_pred_empty_with_target = 0
 
-    # for data in data_loader:
     for i, data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         total_its += 1
-        image, target, sentences, attentions, target_masks, position_masks, _ = data
-        image          = image.cuda(non_blocking=True)
-        target         = target.cuda(non_blocking=True)
-        sentences      = sentences.cuda(non_blocking=True)
-        attentions     = attentions.cuda(non_blocking=True)
-        target_masks   = target_masks.cuda(non_blocking=True)
+        image, target, sentences, attentions, target_masks, position_masks, sample_keys = data
+        image = image.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        sentences = sentences.cuda(non_blocking=True)
+        attentions = attentions.cuda(non_blocking=True)
+        target_masks = target_masks.cuda(non_blocking=True)
         position_masks = position_masks.cuda(non_blocking=True)
 
-        sentences      = sentences.squeeze(1)
-        attentions     = attentions.squeeze(1)
-        target_masks   = target_masks.squeeze(1)
+        sentences = sentences.squeeze(1)
+        attentions = attentions.squeeze(1)
+        target_masks = target_masks.squeeze(1)
         position_masks = position_masks.squeeze(1)
 
         if bert_model is not None:
-            last_hidden_states = bert_model(sentences, attention_mask=attentions)[0]  # (6, 10, 768)
-            embedding = last_hidden_states.permute(0, 2, 1)  # (B, 768, N_l) to make Conv1d happy
-            attentions = attentions.unsqueeze(dim=-1)  # (batch, N_l, 1)
-            output = model(image, embedding, attentions)#, sentences_hidden_state)# [4,2,120,120]
+            last_hidden_states = bert_model(sentences, attention_mask=attentions)[0]
+            embedding = last_hidden_states.permute(0, 2, 1)
+            attentions = attentions.unsqueeze(dim=-1)
+            output = model(image, embedding, attentions)
         else:
             output = model(image, sentences, attentions, target_masks, position_masks)
-            # output = model(image, sentences, attentions)
+
+        pred = output.argmax(1)
+        target_fg_pixels = int(torch.count_nonzero(target).item())
+        pred_fg_pixels = int(torch.count_nonzero(pred).item())
+        total_pixels = int(target.numel())
+        update_foreground_stats(debug_target_stats, target_fg_pixels, total_pixels)
+        update_foreground_stats(debug_pred_stats, pred_fg_pixels, total_pixels)
+        debug_pred_empty_with_target += int(pred_fg_pixels == 0 and target_fg_pixels > 0)
+
+        if getattr(args, "debug_diagnostics", False) and total_its <= getattr(args, "debug_log_first_n", 3):
+            sample_key = sample_keys[0] if isinstance(sample_keys, (list, tuple)) else sample_keys
+            print(
+                f"[Debug][Train][Epoch {epoch}][Sample {total_its}] key={sample_key} "
+                f"target_fg={target_fg_pixels}/{total_pixels} ({target_fg_pixels / max(total_pixels, 1):.4%}) "
+                f"pred_fg={pred_fg_pixels}/{total_pixels} ({pred_fg_pixels / max(total_pixels, 1):.4%}) "
+                f"fg_logit_mean={output[:, 1].mean().item():.4f} "
+                f"fg_logit_max={output[:, 1].max().item():.4f} "
+                f"bg_logit_mean={output[:, 0].mean().item():.4f}"
+            )
+
         optimizer.zero_grad()
         loss = criterion(output, target)
 
@@ -222,6 +284,14 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+    if getattr(args, "debug_diagnostics", False):
+        print(f"[Debug][Train][Epoch {epoch}] {format_foreground_stats('target', debug_target_stats)}")
+        print(f"[Debug][Train][Epoch {epoch}] {format_foreground_stats('pred', debug_pred_stats)}")
+        print(
+            f"[Debug][Train][Epoch {epoch}] pred_empty_with_nonempty_target="
+            f"{debug_pred_empty_with_target}/{debug_target_stats['samples']} "
+            f"({debug_pred_empty_with_target / max(debug_target_stats['samples'], 1):.2%})"
+        )
     if args.local_rank == 0:
         wandb.log({
             "Train Loss": train_loss / total_its,})

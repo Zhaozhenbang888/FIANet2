@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 
 def get_parser():
     parser = argparse.ArgumentParser(description='FIANet training and testing')
@@ -62,6 +62,17 @@ def get_parser():
         default='full',
         choices=['full', 'no_parser', 'off'],
         help='GRL ablation mode: full uses the fine-grained parser, no_parser keeps GRL but disables structured parsing, off bypasses GRL entirely.',
+    )
+    parser.add_argument(
+        '--debug_diagnostics',
+        action='store_true',
+        help='print extra dataset/train/eval/backbone diagnostics for debugging zero-IoU runs',
+    )
+    parser.add_argument(
+        '--debug_log_first_n',
+        default=3,
+        type=int,
+        help='how many per-sample/per-stage debug lines to print before switching to summary-only logs',
     )
     return parser
 

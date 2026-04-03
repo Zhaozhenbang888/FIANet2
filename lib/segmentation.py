@@ -1,4 +1,4 @@
-import torch
+﻿import torch
 import torch.nn as nn
 from .mask_predictor import SimpleDecoding
 from .backbone import MultiModalSwinTransformer
@@ -56,7 +56,9 @@ def _segm_lavt(pretrained, args):
                                          grl_drop=getattr(args, 'grl_drop', 0.1),
                                          grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
-                                         grl_dataset_name=getattr(args, 'dataset', None)
+                                         grl_dataset_name=getattr(args, 'dataset', None),
+                                         debug_diagnostics=getattr(args, 'debug_diagnostics', False),
+                                         debug_log_first_n=getattr(args, 'debug_log_first_n', 3)
                                          )
     if pretrained:
         print('Initializing Multi-modal Swin Transformer weights from ' + pretrained)
@@ -134,6 +136,8 @@ def _segm_lavt_one(pretrained, args):
                                          grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
                                          grl_dataset_name=getattr(args, 'dataset', None),
+                                         debug_diagnostics=getattr(args, 'debug_diagnostics', False),
+                                         debug_log_first_n=getattr(args, 'debug_log_first_n', 3)
                                          )
     if pretrained:
         print('Initializing Multi-modal Swin Transformer weights from ' + pretrained)

@@ -1,4 +1,4 @@
-import torch
+﻿import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
@@ -427,7 +427,9 @@ class MultiModalSwinTransformer(nn.Module):
                  grl_drop=0.1,
                  grl_mode='full',
                  grl_tokenizer_name=None,
-                 grl_dataset_name=None
+                 grl_dataset_name=None,
+                 debug_diagnostics=False,
+                 debug_log_first_n=3
                  ):
         super().__init__()
 
@@ -438,6 +440,8 @@ class MultiModalSwinTransformer(nn.Module):
         self.patch_norm = patch_norm
         self.out_indices = out_indices
         self.frozen_stages = frozen_stages
+        self.debug_diagnostics = debug_diagnostics
+        self.debug_log_first_n = debug_log_first_n
        
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
@@ -476,7 +480,10 @@ class MultiModalSwinTransformer(nn.Module):
                 downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                 use_checkpoint=use_checkpoint,
                 num_heads_fusion=num_heads_fusion[i_layer],
-                fusion_drop=fusion_drop
+                fusion_drop=fusion_drop,
+                stage_index=i_layer,
+                debug_diagnostics=debug_diagnostics,
+                debug_log_first_n=debug_log_first_n
             )
             self.layers.append(layer)
 
@@ -617,7 +624,10 @@ class MMBasicLayer(nn.Module):
                  downsample=None,
                  use_checkpoint=False,
                  num_heads_fusion=1,
-                 fusion_drop=0.0
+                 fusion_drop=0.0,
+                 stage_index=0,
+                 debug_diagnostics=False,
+                 debug_log_first_n=3
                  ):
         super().__init__()
         self.window_size = window_size
@@ -625,6 +635,10 @@ class MMBasicLayer(nn.Module):
         self.depth = depth
         self.use_checkpoint = use_checkpoint
         self.dim = dim
+        self.stage_index = stage_index
+        self.debug_diagnostics = debug_diagnostics
+        self.debug_log_first_n = debug_log_first_n
+        self._debug_logs_emitted = 0
 
         # build blocks
         self.blocks = nn.ModuleList([
@@ -733,6 +747,19 @@ class MMBasicLayer(nn.Module):
         # Channel Modulation
         x_add = x_add * fc_out_2.unsqueeze(1)
         x = x + x_add
+
+        if self.debug_diagnostics and self._debug_logs_emitted < self.debug_log_first_n:
+            residual_norm = x_residual.norm(dim=2).mean().item()
+            add_norm = x_add.norm(dim=2).mean().item()
+            fused_norm = x.norm(dim=2).mean().item()
+            delta_norm = (x - x_residual).norm(dim=2).mean().item()
+            print(
+                f"[Debug][Backbone][Stage {self.stage_index}] HxW={H}x{W} "
+                f"residual_norm={residual_norm:.4f} add_norm={add_norm:.4f} "
+                f"fused_norm={fused_norm:.4f} fused_minus_returned_norm={delta_norm:.4f} "
+                f"returned_feature='x_residual'"
+            )
+            self._debug_logs_emitted += 1
 
         if self.downsample is not None:
             x_down = self.downsample(x, H, W)

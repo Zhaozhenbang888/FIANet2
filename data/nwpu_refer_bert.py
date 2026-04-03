@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import pickle
 from collections import Counter
@@ -164,6 +164,9 @@ class ReferDataset(data.Dataset):
         self.target_transform = target_transforms
         self.split = split
         self.max_tokens = 22
+        self.debug_diagnostics = getattr(args, "debug_diagnostics", False)
+        self.debug_log_first_n = int(getattr(args, "debug_log_first_n", 3))
+        self._debug_samples_logged = 0
 
         data_root = args.nwpu_data_root if getattr(args, "nwpu_data_root", "") else args.refer_data_root
         language_filter = getattr(args, "nwpu_lang", "all")
@@ -267,6 +270,20 @@ class ReferDataset(data.Dataset):
 
         if self.image_transforms is not None:
             img, target = self.image_transforms(img, annot)
+
+        if self.debug_diagnostics and self._debug_samples_logged < self.debug_log_first_n:
+            raw_fg = int(np.count_nonzero(ref_mask))
+            raw_total = int(ref_mask.size)
+            transformed_fg = int(torch.count_nonzero(target).item())
+            transformed_total = int(target.numel())
+            print(
+                f"[Debug][Dataset][{self.split}] idx={index} ann_id={self.ann_ids[index]} "
+                f"raw_fg={raw_fg}/{raw_total} ({raw_fg / max(raw_total, 1):.4%}) "
+                f"transformed_fg={transformed_fg}/{transformed_total} "
+                f"({transformed_fg / max(transformed_total, 1):.4%}) "
+                f"sentence={self.sentences_raw[index]!r}"
+            )
+            self._debug_samples_logged += 1
 
         choice_sent = np.random.choice(len(self.input_ids[index]))
         tensor_embeddings = self.input_ids[index][choice_sent]
