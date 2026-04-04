@@ -320,12 +320,16 @@ def main(args):
         weight=args.loss_dice_weight,
         max_fg_weight=args.loss_fg_max_weight,
         fg_weight_exponent=args.loss_fg_weight_exponent,
+        ce_weight_mode=args.loss_ce_weight_mode,
+        fixed_fg_weight=args.loss_fixed_fg_weight,
     )
     print(
         "Loss config: "
         f"dice_weight={args.loss_dice_weight}, "
         f"fg_max_weight={args.loss_fg_max_weight}, "
-        f"fg_weight_exponent={args.loss_fg_weight_exponent}"
+        f"fg_weight_exponent={args.loss_fg_weight_exponent}, "
+        f"ce_weight_mode={args.loss_ce_weight_mode}, "
+        f"fixed_fg_weight={args.loss_fixed_fg_weight}"
     )
 
     # set datasets

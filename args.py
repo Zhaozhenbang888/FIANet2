@@ -92,6 +92,18 @@ def get_parser():
         type=float,
         help='exponent for dynamic foreground class weighting; smaller is less aggressive',
     )
+    parser.add_argument(
+        '--loss_ce_weight_mode',
+        default='dynamic',
+        choices=['dynamic', 'none', 'fixed'],
+        help='cross entropy class-weight mode: dynamic uses per-sample balance, none disables class reweighting, fixed uses loss_fixed_fg_weight.',
+    )
+    parser.add_argument(
+        '--loss_fixed_fg_weight',
+        default=1.0,
+        type=float,
+        help='foreground class weight when loss_ce_weight_mode=fixed; background weight stays 1.0',
+    )
     return parser
 
 

@@ -54,13 +54,28 @@ class DiceLoss:
 
 
 class Loss():
-    def __init__(self, weight=0.1, max_fg_weight=20.0, fg_weight_exponent=0.5):
+    def __init__(
+        self,
+        weight=0.1,
+        max_fg_weight=20.0,
+        fg_weight_exponent=0.5,
+        ce_weight_mode="dynamic",
+        fixed_fg_weight=1.0,
+    ):
         self.dice_loss = DiceLoss()
         self.weight = weight
         self.max_fg_weight = max_fg_weight
         self.fg_weight_exponent = fg_weight_exponent
+        self.ce_weight_mode = ce_weight_mode
+        self.fixed_fg_weight = float(fixed_fg_weight)
 
     def _compute_ce_weight(self, targ):
+        if self.ce_weight_mode == "none":
+            return None
+        if self.ce_weight_mode == "fixed":
+            fg_weight = max(1.0, self.fixed_fg_weight)
+            return torch.tensor([1.0, fg_weight], device=targ.device, dtype=torch.float32)
+
         foreground_count = torch.count_nonzero(targ).item()
         total_count = targ.numel()
         background_count = total_count - foreground_count
