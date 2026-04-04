@@ -2,10 +2,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from collections import OrderedDict
+import math
 
 
 class SimpleDecoding(nn.Module):
-    def __init__(self, c4_dims, factor=2):
+    def __init__(self, c4_dims, factor=2, fg_prior=-1.0):
         super(SimpleDecoding, self).__init__()
 
         hidden_size = c4_dims//factor
@@ -36,6 +37,14 @@ class SimpleDecoding(nn.Module):
         self.relu2_2 = nn.ReLU()
 
         self.conv1_1 = nn.Conv2d(hidden_size, 2, 1)
+
+        if 0.0 < float(fg_prior) < 1.0:
+            # Start from a conservative foreground prior for highly imbalanced masks.
+            nn.init.zeros_(self.conv1_1.weight)
+            nn.init.zeros_(self.conv1_1.bias)
+            fg_logit = math.log(float(fg_prior) / (1.0 - float(fg_prior)))
+            with torch.no_grad():
+                self.conv1_1.bias[1].fill_(fg_logit)
 
     def forward(self, x_c4, x_c3, x_c2, x_c1):
 

@@ -104,6 +104,12 @@ def get_parser():
         type=float,
         help='foreground class weight when loss_ce_weight_mode=fixed; background weight stays 1.0',
     )
+    parser.add_argument(
+        '--decoder_fg_prior',
+        default=-1.0,
+        type=float,
+        help='if in (0,1), initialize decoder foreground logit bias from this prior to reduce early foreground collapse',
+    )
     return parser
 
 

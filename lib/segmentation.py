@@ -69,7 +69,7 @@ def _segm_lavt(pretrained, args):
 
     model_map = [SimpleDecoding, LAVT]
 
-    classifier = model_map[0](8*embed_dim)
+    classifier = model_map[0](8*embed_dim, fg_prior=getattr(args, 'decoder_fg_prior', -1.0))
     base_model = model_map[1]
 
     model = base_model(backbone, classifier)
@@ -147,7 +147,7 @@ def _segm_lavt_one(pretrained, args):
         backbone.init_weights()
 
     model_map = [SimpleDecoding, LAVTOne]
-    classifier = model_map[0](8*embed_dim)
+    classifier = model_map[0](8*embed_dim, fg_prior=getattr(args, 'decoder_fg_prior', -1.0))
     base_model = model_map[1]
 
     model = base_model(backbone, classifier, args)

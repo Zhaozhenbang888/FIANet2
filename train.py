@@ -331,6 +331,7 @@ def main(args):
         f"ce_weight_mode={args.loss_ce_weight_mode}, "
         f"fixed_fg_weight={args.loss_fixed_fg_weight}"
     )
+    print(f"Decoder config: fg_prior={args.decoder_fg_prior}")
 
     # set datasets
     print("\n[***] Set Datasets")
