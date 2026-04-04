@@ -74,6 +74,24 @@ def get_parser():
         type=int,
         help='how many per-sample/per-stage debug lines to print before switching to summary-only logs',
     )
+    parser.add_argument(
+        '--loss_dice_weight',
+        default=0.1,
+        type=float,
+        help='blend factor for Dice loss in total segmentation loss',
+    )
+    parser.add_argument(
+        '--loss_fg_max_weight',
+        default=8.0,
+        type=float,
+        help='upper bound of dynamic foreground class weight in cross entropy',
+    )
+    parser.add_argument(
+        '--loss_fg_weight_exponent',
+        default=0.35,
+        type=float,
+        help='exponent for dynamic foreground class weighting; smaller is less aggressive',
+    )
     return parser
 
 

@@ -22,6 +22,8 @@ os.environ["WANDB_MODE"] = "offline"
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+_loss_fn = None
+
 def seed_everything(seed=2401):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -95,8 +97,10 @@ def get_transform(args):
     return T.Compose(transforms)
 
 
-def criterion(input, target, weight=0.1):
-    return Loss(weight=weight)(input, target)
+def criterion(input, target):
+    if _loss_fn is None:
+        raise RuntimeError("Loss function is not initialized. Please build it in main() before training.")
+    return _loss_fn(input, target)
 
 
 def evaluate(model, data_loader, bert_model, epoch):
@@ -298,6 +302,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
 
 
 def main(args):
+    global _loss_fn
     args.dataset = normalize_dataset_name(args.dataset)
     args.output_dir = utils.resolve_experiment_output_dir(
         args.output_dir,
@@ -310,6 +315,18 @@ def main(args):
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     print('Checkpoint directory: {}'.format(args.output_dir))
+
+    _loss_fn = Loss(
+        weight=args.loss_dice_weight,
+        max_fg_weight=args.loss_fg_max_weight,
+        fg_weight_exponent=args.loss_fg_weight_exponent,
+    )
+    print(
+        "Loss config: "
+        f"dice_weight={args.loss_dice_weight}, "
+        f"fg_max_weight={args.loss_fg_max_weight}, "
+        f"fg_weight_exponent={args.loss_fg_weight_exponent}"
+    )
 
     # set datasets
     print("\n[***] Set Datasets")
