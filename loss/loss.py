@@ -105,7 +105,8 @@ class Loss():
                 class_weight_map = torch.ones_like(pt)
             else:
                 class_weight_map = ce_weight[targ]
-            ce_loss = -(class_weight_map * focal_factor * log_pt).mean()
+            weighted_loss = -(class_weight_map * focal_factor * log_pt)
+            ce_loss = weighted_loss.sum() / class_weight_map.sum().clamp_min(1e-6)
         else:
             ce_loss = torch.nn.functional.cross_entropy(pred, targ, weight=ce_weight)
         return (1 - self.weight) * ce_loss + self.weight * dice_loss
