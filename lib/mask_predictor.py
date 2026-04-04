@@ -39,11 +39,11 @@ class SimpleDecoding(nn.Module):
         self.conv1_1 = nn.Conv2d(hidden_size, 2, 1)
 
         if 0.0 < float(fg_prior) < 1.0:
-            # Start from a conservative foreground prior for highly imbalanced masks.
-            nn.init.zeros_(self.conv1_1.weight)
-            nn.init.zeros_(self.conv1_1.bias)
+            # Keep random classifier weights so features can influence logits from step 1,
+            # and only bias the foreground prior to avoid early all-foreground collapse.
             fg_logit = math.log(float(fg_prior) / (1.0 - float(fg_prior)))
             with torch.no_grad():
+                self.conv1_1.bias[0].fill_(0.0)
                 self.conv1_1.bias[1].fill_(fg_logit)
 
     def forward(self, x_c4, x_c3, x_c2, x_c1):
