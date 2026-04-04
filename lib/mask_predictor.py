@@ -9,6 +9,13 @@ class SimpleDecoding(nn.Module):
     def __init__(self, c4_dims, factor=2, fg_prior=-1.0):
         super(SimpleDecoding, self).__init__()
 
+        def _gn(channels):
+            # GroupNorm is robust for very small batch sizes (e.g., batch-size=1).
+            groups = 32
+            while channels % groups != 0 and groups > 1:
+                groups //= 2
+            return nn.GroupNorm(groups, channels)
+
         hidden_size = c4_dims//factor
         c4_size = c4_dims
         c3_size = c4_dims//(factor**1)
@@ -16,24 +23,24 @@ class SimpleDecoding(nn.Module):
         c1_size = c4_dims//(factor**3)
 
         self.conv1_4 = nn.Conv2d(c4_size+c3_size, hidden_size, 3, padding=1, bias=False)
-        self.bn1_4 = nn.BatchNorm2d(hidden_size)
+        self.bn1_4 = _gn(hidden_size)
         self.relu1_4 = nn.ReLU()
         self.conv2_4 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1, bias=False)
-        self.bn2_4 = nn.BatchNorm2d(hidden_size)
+        self.bn2_4 = _gn(hidden_size)
         self.relu2_4 = nn.ReLU()
 
         self.conv1_3 = nn.Conv2d(hidden_size + c2_size, hidden_size, 3, padding=1, bias=False)
-        self.bn1_3 = nn.BatchNorm2d(hidden_size)
+        self.bn1_3 = _gn(hidden_size)
         self.relu1_3 = nn.ReLU()
         self.conv2_3 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1, bias=False)
-        self.bn2_3 = nn.BatchNorm2d(hidden_size)
+        self.bn2_3 = _gn(hidden_size)
         self.relu2_3 = nn.ReLU()
 
         self.conv1_2 = nn.Conv2d(hidden_size + c1_size, hidden_size, 3, padding=1, bias=False)
-        self.bn1_2 = nn.BatchNorm2d(hidden_size)
+        self.bn1_2 = _gn(hidden_size)
         self.relu1_2 = nn.ReLU()
         self.conv2_2 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1, bias=False)
-        self.bn2_2 = nn.BatchNorm2d(hidden_size)
+        self.bn2_2 = _gn(hidden_size)
         self.relu2_2 = nn.ReLU()
 
         self.conv1_1 = nn.Conv2d(hidden_size, 2, 1)
