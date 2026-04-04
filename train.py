@@ -273,6 +273,12 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
         loss = criterion(output, target)
 
         loss.backward()
+        if getattr(args, "grad_clip_norm", 0.0) > 0:
+            if bert_model is not None:
+                params = list(model.parameters()) + list(bert_model.parameters())
+            else:
+                params = model.parameters()
+            torch.nn.utils.clip_grad_norm_(params, max_norm=args.grad_clip_norm)
         optimizer.step()
         lr_scheduler.step()
 
@@ -336,6 +342,12 @@ def main(args):
         f"focal_gamma={args.loss_focal_gamma}"
     )
     print(f"Decoder config: fg_prior={args.decoder_fg_prior}")
+    print(
+        "Opt config: "
+        f"lr={args.lr}, "
+        f"lr_warmup_steps={args.lr_warmup_steps}, "
+        f"grad_clip_norm={args.grad_clip_norm}"
+    )
 
     # set datasets
     print("\n[***] Set Datasets")
@@ -425,9 +437,17 @@ def main(args):
                                   amsgrad=args.amsgrad
                                   )
 
-    # learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                     lambda x: (1 - x / (len(data_loader) * args.epochs)) ** 0.9)
+    # learning rate scheduler with linear warmup
+    total_steps = max(1, len(data_loader) * args.epochs)
+
+    def _lr_lambda(step):
+        warmup_steps = max(0, int(getattr(args, 'lr_warmup_steps', 0)))
+        if warmup_steps > 0 and step < warmup_steps:
+            return float(step + 1) / float(warmup_steps)
+        progress = min(float(step) / float(total_steps), 1.0)
+        return max((1.0 - progress) ** 0.9, 1e-6)
+
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
 
     # housekeeping
     start_time = time.time()

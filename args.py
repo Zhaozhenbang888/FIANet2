@@ -18,6 +18,8 @@ def get_parser():
     parser.add_argument('--img_size', default=480, type=int, help='input image size')
     parser.add_argument("--local_rank", type=int,default=0,help='local rank for DistributedDataParallel')
     parser.add_argument('--lr', default=5e-5, type=float, help='the initial learning rate')   # 5e-5 for RefSegRS, 3e-5 for RRSIS-D
+    parser.add_argument('--lr_warmup_steps', default=1000, type=int,
+                        help='linear warmup steps for learning rate; helps stabilize early training')
     parser.add_argument('--mha', default='', help='If specified, should be in the format of a-b-c-d, e.g., 4-4-4-4,'
                                                   'where a, b, c, and d refer to the numbers of heads in stage-1,'
                                                   'stage-2, stage-3, and stage-4 PWAMs')
@@ -47,6 +49,8 @@ def get_parser():
                         help='tiny, small, base, or large variants of the Swin Transformer')
     parser.add_argument('--wd', '--weight-decay', default=1e-2, type=float, metavar='W', help='weight decay',
                         dest='weight_decay')
+    parser.add_argument('--grad_clip_norm', default=1.0, type=float,
+                        help='max grad norm for gradient clipping; set <=0 to disable')
     parser.add_argument('--window12', action='store_true',
                         help='only needs specified when testing,'
                              'when training, window size is inferred from pre-trained weights file name'
