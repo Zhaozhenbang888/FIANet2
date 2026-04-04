@@ -61,6 +61,8 @@ class Loss():
         fg_weight_exponent=0.5,
         ce_weight_mode="dynamic",
         fixed_fg_weight=1.0,
+        ce_type="ce",
+        focal_gamma=2.0,
     ):
         self.dice_loss = DiceLoss()
         self.weight = weight
@@ -68,6 +70,8 @@ class Loss():
         self.fg_weight_exponent = fg_weight_exponent
         self.ce_weight_mode = ce_weight_mode
         self.fixed_fg_weight = float(fixed_fg_weight)
+        self.ce_type = ce_type
+        self.focal_gamma = float(focal_gamma)
 
     def _compute_ce_weight(self, targ):
         if self.ce_weight_mode == "none":
@@ -90,5 +94,18 @@ class Loss():
     def __call__(self, pred, targ):
         dice_loss = self.dice_loss(pred, targ)
         ce_weight = self._compute_ce_weight(targ)
-        ce_loss = torch.nn.functional.cross_entropy(pred, targ, weight=ce_weight)
+        if self.ce_type == "focal":
+            log_probs = torch.nn.functional.log_softmax(pred, dim=1)
+            probs = torch.exp(log_probs)
+            gather_index = targ.unsqueeze(1)
+            log_pt = torch.gather(log_probs, 1, gather_index).squeeze(1)
+            pt = torch.gather(probs, 1, gather_index).squeeze(1)
+            focal_factor = torch.pow(1.0 - pt, self.focal_gamma)
+            if ce_weight is None:
+                class_weight_map = torch.ones_like(pt)
+            else:
+                class_weight_map = ce_weight[targ]
+            ce_loss = -(class_weight_map * focal_factor * log_pt).mean()
+        else:
+            ce_loss = torch.nn.functional.cross_entropy(pred, targ, weight=ce_weight)
         return (1 - self.weight) * ce_loss + self.weight * dice_loss

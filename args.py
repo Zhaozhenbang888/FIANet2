@@ -110,6 +110,18 @@ def get_parser():
         type=float,
         help='if in (0,1), initialize decoder foreground logit bias from this prior to reduce early foreground collapse',
     )
+    parser.add_argument(
+        '--loss_ce_type',
+        default='ce',
+        choices=['ce', 'focal'],
+        help='cross entropy variant: ce uses standard CE, focal uses focal CE to reduce easy-background dominance',
+    )
+    parser.add_argument(
+        '--loss_focal_gamma',
+        default=2.0,
+        type=float,
+        help='gamma for focal CE when loss_ce_type=focal',
+    )
     return parser
 
 

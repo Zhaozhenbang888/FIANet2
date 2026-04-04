@@ -322,6 +322,8 @@ def main(args):
         fg_weight_exponent=args.loss_fg_weight_exponent,
         ce_weight_mode=args.loss_ce_weight_mode,
         fixed_fg_weight=args.loss_fixed_fg_weight,
+        ce_type=args.loss_ce_type,
+        focal_gamma=args.loss_focal_gamma,
     )
     print(
         "Loss config: "
@@ -329,7 +331,9 @@ def main(args):
         f"fg_max_weight={args.loss_fg_max_weight}, "
         f"fg_weight_exponent={args.loss_fg_weight_exponent}, "
         f"ce_weight_mode={args.loss_ce_weight_mode}, "
-        f"fixed_fg_weight={args.loss_fixed_fg_weight}"
+        f"fixed_fg_weight={args.loss_fixed_fg_weight}, "
+        f"ce_type={args.loss_ce_type}, "
+        f"focal_gamma={args.loss_focal_gamma}"
     )
     print(f"Decoder config: fg_prior={args.decoder_fg_prior}")
 
