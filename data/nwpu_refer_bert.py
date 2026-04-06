@@ -18,6 +18,7 @@ from data.nwpu_text_adapter import (
     contains_cjk,
     extract_sentence_text,
     sentence_to_text_language_id,
+    strip_attached_ascii_noise,
     TEXT_LANG_CHINESE_ID,
     text_matches_language_filter,
 )
@@ -67,6 +68,8 @@ def _build_samples(data_root, split, language_filter="all"):
     all_category_ids = []
     all_sentences = []
     language_counter = Counter()
+    mixed_cleaned_count = 0
+    mixed_dropped_count = 0
 
     for ref in refs:
         ref_split = ref.get("split", "")
@@ -91,11 +94,14 @@ def _build_samples(data_root, split, language_filter="all"):
             if not sentence:
                 continue
 
+            cleaned_sentence = strip_attached_ascii_noise(sentence)
+            if cleaned_sentence != sentence:
+                mixed_cleaned_count += 1
+                sentence = cleaned_sentence
+
             if contains_cjk(sentence) and contains_ascii_letter(sentence):
-                raise ValueError(
-                    "Mixed Chinese-English caption detected in NWPU-refer, but mixed handling is disabled. "
-                    f"split={split}, image_id={img_id}, ann_id={ann_id}, sentence={sentence!r}"
-                )
+                mixed_dropped_count += 1
+                continue
 
             sentence_language = classify_text_language(sentence)
             language_counter[sentence_language] += 1
@@ -110,6 +116,11 @@ def _build_samples(data_root, split, language_filter="all"):
         f"NWPU-refer split={split} lang={language_filter} loaded: {len(all_images)} samples "
         f"(available languages: {dict(language_counter)})"
     )
+    if mixed_cleaned_count > 0 or mixed_dropped_count > 0:
+        print(
+            f"NWPU-refer split={split} mixed-caption cleanup: cleaned={mixed_cleaned_count}, "
+            f"dropped={mixed_dropped_count}"
+        )
     return all_images, all_ann_ids, all_category_ids, all_sentences, anns_by_id, categories_by_id
 
 

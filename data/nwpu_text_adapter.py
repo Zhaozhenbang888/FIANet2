@@ -252,6 +252,23 @@ def classify_text_language(text: str) -> str:
     return "other"
 
 
+def strip_attached_ascii_noise(text: str) -> str:
+    """Remove short ASCII fragments accidentally attached to CJK text.
+
+    Examples:
+      - "道路上的人行天桥s" -> "道路上的人行天桥"
+      - "a道路" -> "道路"
+    """
+    if not text:
+        return ""
+    if not (contains_cjk(text) and contains_ascii_letter(text)):
+        return text
+
+    cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[A-Za-z]{1,3}$", "", text)
+    cleaned = re.sub(r"^[A-Za-z]{1,3}(?=[\u4e00-\u9fff])", "", cleaned)
+    return " ".join(cleaned.strip().split())
+
+
 def sentence_to_text_language_id(text: str) -> int:
     language = classify_text_language(text)
     if language == "chinese":
