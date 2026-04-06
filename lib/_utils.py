@@ -49,21 +49,84 @@ class _LAVTOneSimpleDecode(nn.Module):
         self.classifier = classifier
         self.text_encoder = BertModel.from_pretrained(args.ck_bert)
         self.text_encoder.pooler = None
+        self.text_encoder_zh = None
+        self.text_route_mode = getattr(args, "text_route_mode", "single")
+        if self.text_route_mode == "dual":
+            zh_ckpt = getattr(args, "ck_bert_zh", "") or args.ck_bert
+            try:
+                self.text_encoder_zh = BertModel.from_pretrained(zh_ckpt)
+                self.text_encoder_zh.pooler = None
+            except Exception as exc:
+                print(
+                    f"[Warning][TextEncoder] Failed to load Chinese text encoder '{zh_ckpt}': {exc}. "
+                    "Fallback to single English text encoder."
+                )
+                self.text_encoder_zh = None
 
-    def forward(self, x, text, l_mask, t_mask, p_mask):
+    def _encode_text(self, text, attention_mask, text_lang_ids):
+        if self.text_encoder_zh is None or text_lang_ids is None:
+            return self.text_encoder(text, attention_mask=attention_mask)[0]
+
+        if text_lang_ids.dim() > 1:
+            text_lang_ids = text_lang_ids.view(text_lang_ids.size(0), -1)[:, 0]
+
+        text_lang_ids = text_lang_ids.to(text.device).long()
+        batch_size = text.size(0)
+        hidden_states = None
+
+        english_mask = text_lang_ids == 0
+        chinese_mask = text_lang_ids == 1
+        other_mask = ~(english_mask | chinese_mask)
+
+        if torch.any(english_mask):
+            english_states = self.text_encoder(
+                text[english_mask], attention_mask=attention_mask[english_mask]
+            )[0]
+            hidden_states = english_states.new_zeros((batch_size, english_states.size(1), english_states.size(2)))
+            hidden_states[english_mask] = english_states
+
+        if torch.any(chinese_mask):
+            chinese_states = self.text_encoder_zh(
+                text[chinese_mask], attention_mask=attention_mask[chinese_mask]
+            )[0]
+            if hidden_states is None:
+                hidden_states = chinese_states.new_zeros((batch_size, chinese_states.size(1), chinese_states.size(2)))
+            hidden_states[chinese_mask] = chinese_states
+
+        if torch.any(other_mask):
+            other_states = self.text_encoder(
+                text[other_mask], attention_mask=attention_mask[other_mask]
+            )[0]
+            if hidden_states is None:
+                hidden_states = other_states.new_zeros((batch_size, other_states.size(1), other_states.size(2)))
+            hidden_states[other_mask] = other_states
+
+        return hidden_states
+
+    def forward(self, x, text, l_mask, t_mask, p_mask, text_lang_ids=None):
         input_shape = x.shape[-2:]
         ### language inference ###
-        l_feats = self.text_encoder(text, attention_mask=l_mask)[0]
+        l_feats = self._encode_text(text, l_mask, text_lang_ids)
         l_feats = l_feats.permute(0, 2, 1)  # (B, 768, N_l)
         l_mask = l_mask.unsqueeze(dim=-1)  # (batch, N_l, 1)
 
-        t_feats = self.text_encoder(text, attention_mask=t_mask)[0]
+        t_feats = self._encode_text(text, t_mask, text_lang_ids)
         t_feats = t_feats.permute(0, 2, 1)  # (B, 768, N_l)
         t_mask = t_mask.unsqueeze(dim=-1)  # (batch, N_l, 1)
 
-        p_feats = self.text_encoder(text, attention_mask=p_mask)[0]
+        p_feats = self._encode_text(text, p_mask, text_lang_ids)
         p_feats = p_feats.permute(0, 2, 1)  # (B, 768, N_l)
         p_mask = p_mask.unsqueeze(dim=-1)  # (batch, N_l, 1)
+
+        text_ids_for_grl = text
+        if self.text_encoder_zh is not None and text_lang_ids is not None:
+            if text_lang_ids.dim() > 1:
+                lang_view = text_lang_ids.view(text_lang_ids.size(0), -1)[:, 0]
+            else:
+                lang_view = text_lang_ids
+            if torch.any(lang_view.to(text.device).long() == 1):
+                # Avoid decoding Chinese-tokenizer ids with English GRL tokenizer.
+                text_ids_for_grl = None
 
         ##########################
         features = self.backbone(
@@ -74,7 +137,7 @@ class _LAVTOneSimpleDecode(nn.Module):
             t_mask,
             p_feats,
             p_mask,
-            text_ids=text,
+            text_ids=text_ids_for_grl,
         )
         x_c1, x_c2, x_c3, x_c4  = features   # e.g. x_c1:[B, 128, 120, 120], x_c2:[B, 256, 60, 60], x_c3:[B, 512, 30, 30], x_c4:[B, 1024, 15, 15]
         x = self.classifier(x_c4, x_c3, x_c2, x_c1)

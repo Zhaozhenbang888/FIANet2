@@ -103,6 +103,17 @@ def criterion(input, target):
     return _loss_fn(input, target)
 
 
+def _unpack_batch(batch):
+    if len(batch) == 8:
+        image, target, sentences, attentions, target_masks, position_masks, text_language_ids, sample_keys = batch
+    elif len(batch) == 7:
+        image, target, sentences, attentions, target_masks, position_masks, sample_keys = batch
+        text_language_ids = None
+    else:
+        raise ValueError(f"Unexpected batch size: {len(batch)}")
+    return image, target, sentences, attentions, target_masks, position_masks, text_language_ids, sample_keys
+
+
 def evaluate(model, data_loader, bert_model, epoch):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -127,13 +138,15 @@ def evaluate(model, data_loader, bert_model, epoch):
     with torch.no_grad():
         for data in metric_logger.log_every(data_loader, 100, header):
             total_its += 1
-            image, target, sentences, attentions, target_masks, position_masks, sample_keys = data
+            image, target, sentences, attentions, target_masks, position_masks, text_language_ids, sample_keys = _unpack_batch(data)
             image = image.cuda(non_blocking=True)
             target = target.cuda(non_blocking=True)
             sentences = sentences.cuda(non_blocking=True)
             attentions = attentions.cuda(non_blocking=True)
             target_masks = target_masks.cuda(non_blocking=True)
             position_masks = position_masks.cuda(non_blocking=True)
+            if text_language_ids is not None:
+                text_language_ids = text_language_ids.cuda(non_blocking=True)
 
             sentences = sentences.squeeze(1)
             attentions = attentions.squeeze(1)
@@ -146,7 +159,7 @@ def evaluate(model, data_loader, bert_model, epoch):
                 attentions = attentions.unsqueeze(dim=-1)
                 output = model(image, embedding, l_mask=attentions)
             else:
-                output = model(image, sentences, attentions, target_masks, position_masks)
+                output = model(image, sentences, attentions, target_masks, position_masks, text_lang_ids=text_language_ids)
 
             iou, I, U = IoU(output, target)
             loss = criterion(output, target)
@@ -229,13 +242,15 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
 
     for i, data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         total_its += 1
-        image, target, sentences, attentions, target_masks, position_masks, sample_keys = data
+        image, target, sentences, attentions, target_masks, position_masks, text_language_ids, sample_keys = _unpack_batch(data)
         image = image.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
         sentences = sentences.cuda(non_blocking=True)
         attentions = attentions.cuda(non_blocking=True)
         target_masks = target_masks.cuda(non_blocking=True)
         position_masks = position_masks.cuda(non_blocking=True)
+        if text_language_ids is not None:
+            text_language_ids = text_language_ids.cuda(non_blocking=True)
 
         sentences = sentences.squeeze(1)
         attentions = attentions.squeeze(1)
@@ -248,7 +263,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, epoc
             attentions = attentions.unsqueeze(dim=-1)
             output = model(image, embedding, attentions)
         else:
-            output = model(image, sentences, attentions, target_masks, position_masks)
+            output = model(image, sentences, attentions, target_masks, position_masks, text_lang_ids=text_language_ids)
 
         pred = output.argmax(1)
         target_fg_pixels = int(torch.count_nonzero(target).item())
@@ -420,14 +435,19 @@ def main(args):
                                 if p.requires_grad] for i in range(10)])},
         ]
     else:
+        text_encoder_params = [
+            p for i in range(10) for p in model.text_encoder.encoder.layer[i].parameters() if p.requires_grad
+        ]
+        if getattr(model, "text_encoder_zh", None) is not None:
+            text_encoder_params += [
+                p for i in range(10) for p in model.text_encoder_zh.encoder.layer[i].parameters() if p.requires_grad
+            ]
         params_to_optimize = [
             {'params': backbone_no_decay, 'weight_decay': 0.0},
             {'params': backbone_decay},
             {"params": [p for p in model.classifier.parameters() if p.requires_grad]},
             # the following are the parameters of bert
-            {"params": reduce(operator.concat,
-                              [[p for p in model.text_encoder.encoder.layer[i].parameters()
-                                if p.requires_grad] for i in range(10)])},
+            {"params": text_encoder_params},
         ]
 
     # optimizer

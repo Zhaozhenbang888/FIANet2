@@ -6,7 +6,23 @@ def get_parser():
                         help='if true, set amsgrad to True in an Adam or AdamW optimizer.')
     parser.add_argument('-b', '--batch-size', default=8, type=int)
     parser.add_argument('--bert_tokenizer', default='./bert-base-uncased', help='BERT tokenizer')
+    parser.add_argument(
+        '--bert_tokenizer_zh',
+        default='hfl/chinese-roberta-wwm-ext',
+        help='Chinese tokenizer used when text_route_mode=dual; fallback to bert_tokenizer if loading fails',
+    )
     parser.add_argument('--ck_bert', default='bert-base-uncased', help='pre-trained BERT weights')
+    parser.add_argument(
+        '--ck_bert_zh',
+        default='hfl/chinese-roberta-wwm-ext',
+        help='Chinese BERT weights used when text_route_mode=dual; fallback to ck_bert if loading fails',
+    )
+    parser.add_argument(
+        '--text_route_mode',
+        default='dual',
+        choices=['single', 'dual'],
+        help='single uses one English text encoder; dual routes English to English encoder and Chinese to Chinese encoder.',
+    )
     parser.add_argument('--dataset', default='rrsisd',
                         help='dataset name: refsegrs, rrsisd, nwpu-refer, rsibench_dataset')
     parser.add_argument('--ddp_trained_weights', action='store_true',

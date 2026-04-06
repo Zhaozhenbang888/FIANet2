@@ -91,6 +91,7 @@ class ReferDataset(data.Dataset):
         self.attention_masks = []
         self.target_masks = []
         self.position_masks = []
+        self.text_language_ids = []
         self.sentences_raw = []
         self.pp_phrase = []
 
@@ -158,6 +159,7 @@ class ReferDataset(data.Dataset):
             if torch.sum(position_tensor) == 0:
                 position_tensor = self.attention_masks[-1][0]
             self.position_masks.append([position_tensor])
+            self.text_language_ids.append([torch.tensor([0], dtype=torch.long)])
 
     def get_classes(self):
         return self.classes
@@ -189,5 +191,6 @@ class ReferDataset(data.Dataset):
         attention_mask = self.attention_masks[index][choice_sent]
         target_mask = self.target_masks[index][choice_sent]
         position_mask = self.position_masks[index][choice_sent]
+        text_language_id = self.text_language_ids[index][choice_sent]
 
-        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, save_prefix
+        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, text_language_id, save_prefix

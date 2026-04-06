@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import re
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -84,18 +84,42 @@ _ENGLISH_TARGET_ALIASES = {
 }
 
 
+_SENTENCE_TEXT_KEYS = (
+    "raw",
+    "sent",
+    "sentence",
+    "text",
+    "raw_sent",
+    "sent_ch",
+    "raw_ch",
+)
+
+
+TEXT_LANG_ENGLISH_ID = 0
+TEXT_LANG_CHINESE_ID = 1
+
+
 _DESCRIPTOR_PATTERNS = [
     ("\u6240\u6709", "all"),
     ("\u6700\u5927", "largest"),
     ("\u6700\u5c0f", "smallest"),
+    ("\u8f83\u5927", "larger"),
+    ("\u8f83\u5c0f", "smaller"),
     ("\u767d\u8272", "white"),
     ("\u9ed1\u8272", "black"),
     ("\u7ea2\u8272", "red"),
     ("\u84dd\u8272", "blue"),
     ("\u9ec4\u8272", "yellow"),
     ("\u7eff\u8272", "green"),
+    ("\u7070\u8272", "gray"),
+    ("\u6df1\u8272", "dark"),
+    ("\u6d45\u8272", "light"),
+    ("\u9752\u8272", "cyan"),
+    ("\u7d2b\u8272", "purple"),
     ("\u68d5\u8272", "brown"),
     ("\u6a59\u7ea2\u8272", "orange red"),
+    ("\u77e9\u5f62", "rectangular"),
+    ("\u7403\u5f62", "circular"),
     ("\u5927\u8d27\u8f66", "large truck"),
     ("\u5927\u6c7d\u8f66", "large car"),
     ("\u516c\u4ea4\u8f66", "bus"),
@@ -103,6 +127,30 @@ _DESCRIPTOR_PATTERNS = [
 
 
 _POSITION_PATTERNS = [
+    ("\u5de6\u4e0a\u89d2", "top left"),
+    ("\u53f3\u4e0a\u89d2", "top right"),
+    ("\u5de6\u4e0b\u89d2", "bottom left"),
+    ("\u53f3\u4e0b\u89d2", "bottom right"),
+    ("\u5de6\u4fa7", "left"),
+    ("\u53f3\u4fa7", "right"),
+    ("\u5de6\u65b9", "left"),
+    ("\u53f3\u65b9", "right"),
+    ("\u9760\u5de6", "left"),
+    ("\u9760\u53f3", "right"),
+    ("\u9760\u4e0a", "top"),
+    ("\u9760\u4e0b", "bottom"),
+    ("\u6700\u4e0a\u8fb9", "topmost"),
+    ("\u6700\u4e0b\u8fb9", "bottommost"),
+    ("\u6700\u5de6\u4fa7", "leftmost"),
+    ("\u6700\u53f3\u4fa7", "rightmost"),
+    ("\u6700\u4e0a", "topmost"),
+    ("\u6700\u4e0b", "bottommost"),
+    ("\u6700\u5de6", "leftmost"),
+    ("\u6700\u53f3", "rightmost"),
+    ("\u4e0a\u8fb9", "top"),
+    ("\u4e0b\u8fb9", "bottom"),
+    ("\u4e0a\u4fa7", "top"),
+    ("\u4e0b\u4fa7", "bottom"),
     ("\u5de6\u8fb9", "left"),
     ("\u53f3\u8fb9", "right"),
     ("\u4e0a\u9762", "top"),
@@ -118,6 +166,7 @@ _POSITION_PATTERNS = [
     ("\u505c\u8f66\u573a\u5185", "in parking"),
     ("\u8dd1\u9053\u4e0a", "on runway"),
     ("\u8dd1\u9053\u4e0a\u7684", "on runway"),
+    ("\u4ece\u4e0a\u5230\u4e0b", "top to bottom"),
     ("\u5c4b\u9876", "on roof"),
     ("\u9644\u8fd1", "nearby"),
 ]
@@ -195,7 +244,7 @@ def classify_text_language(text: str) -> str:
     has_cjk = contains_cjk(text)
     has_ascii = contains_ascii_letter(text)
     if has_cjk and has_ascii:
-        return "mixed"
+        return "other"
     if has_cjk:
         return "chinese"
     if has_ascii:
@@ -203,10 +252,62 @@ def classify_text_language(text: str) -> str:
     return "other"
 
 
+def sentence_to_text_language_id(text: str) -> int:
+    language = classify_text_language(text)
+    if language == "chinese":
+        return TEXT_LANG_CHINESE_ID
+    return TEXT_LANG_ENGLISH_ID
+
+
 def text_matches_language_filter(text: str, language_filter: str) -> bool:
     if language_filter == "all":
         return True
     return classify_text_language(text) == language_filter
+
+
+def _decode_bytes_text(raw_bytes: bytes) -> str:
+    for encoding in ("utf-8", "gb18030", "latin1"):
+        try:
+            return raw_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw_bytes.decode("utf-8", errors="replace")
+
+
+def _normalize_sentence_candidate(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, bytes):
+        text = _decode_bytes_text(value)
+    elif isinstance(value, str):
+        text = value
+    elif isinstance(value, (list, tuple)):
+        tokens: List[str] = []
+        for item in value:
+            token = _normalize_sentence_candidate(item)
+            if token:
+                tokens.append(token)
+        if not tokens:
+            return ""
+        if any(contains_cjk(token) for token in tokens):
+            text = "".join(tokens)
+        else:
+            text = " ".join(tokens)
+    else:
+        text = str(value)
+
+    return " ".join(text.strip().split())
+
+
+def extract_sentence_text(sentence_entry: Any) -> str:
+    if isinstance(sentence_entry, dict):
+        for key in _SENTENCE_TEXT_KEYS:
+            text = _normalize_sentence_candidate(sentence_entry.get(key))
+            if text:
+                return text
+        return _normalize_sentence_candidate(sentence_entry.get("tokens"))
+    return _normalize_sentence_candidate(sentence_entry)
 
 
 def _append_unique(items: List[str], value: str) -> None:
@@ -225,7 +326,7 @@ def _category_prompt(category_name: str) -> List[str]:
 
 def _get_target_phrases(category_name: str, raw_text: str) -> Tuple[str, ...]:
     category = canonicalize_category_name(category_name)
-    if contains_cjk(raw_text):
+    if contains_cjk(raw_text) and not contains_ascii_letter(raw_text):
         return (category,)
 
     phrases: List[str] = []
@@ -256,7 +357,10 @@ def _extract_descriptors(raw_text: str) -> List[str]:
 
 def _extract_positions(raw_text: str) -> List[str]:
     positions: List[str] = []
-    if not contains_cjk(raw_text):
+    has_cjk = contains_cjk(raw_text)
+    has_ascii = contains_ascii_letter(raw_text)
+
+    if has_ascii:
         for needle, english in _ENGLISH_POSITION_PATTERNS:
             if needle in raw_text:
                 _append_unique(positions, english)
@@ -264,20 +368,20 @@ def _extract_positions(raw_text: str) -> List[str]:
             _append_unique(positions, "row")
         if " column " in f" {raw_text} ":
             _append_unique(positions, "column")
-        return positions
 
-    for needle, english in _POSITION_PATTERNS:
-        if needle in raw_text:
-            _append_unique(positions, english)
-    for prefix, ordinal in _ORDINAL_PATTERNS:
-        if f"{prefix}\u884c" in raw_text:
-            _append_unique(positions, f"{ordinal} row")
-        if f"{prefix}\u5217" in raw_text:
-            _append_unique(positions, f"{ordinal} column")
-    if "\u4e00\u884c" in raw_text and not any("row" in item for item in positions):
-        _append_unique(positions, "row")
-    if "\u4e00\u5217" in raw_text and not any("column" in item for item in positions):
-        _append_unique(positions, "column")
+    if has_cjk:
+        for needle, english in _POSITION_PATTERNS:
+            if needle in raw_text:
+                _append_unique(positions, english)
+        for prefix, ordinal in _ORDINAL_PATTERNS:
+            if f"{prefix}\u884c" in raw_text:
+                _append_unique(positions, f"{ordinal} row")
+            if f"{prefix}\u5217" in raw_text:
+                _append_unique(positions, f"{ordinal} column")
+        if "\u4e00\u884c" in raw_text and not any("row" in item for item in positions):
+            _append_unique(positions, "row")
+        if "\u4e00\u5217" in raw_text and not any("column" in item for item in positions):
+            _append_unique(positions, "column")
     return positions
 
 

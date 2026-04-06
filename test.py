@@ -55,6 +55,17 @@ def get_dataset(image_set, transform, args):
     return ds, num_classes
 
 
+def _unpack_batch(batch):
+    if len(batch) == 8:
+        image, target, sentences, attentions, target_masks, position_masks, text_language_ids, save_prefix = batch
+    elif len(batch) == 7:
+        image, target, sentences, attentions, target_masks, position_masks, save_prefix = batch
+        text_language_ids = None
+    else:
+        raise ValueError(f"Unexpected batch size: {len(batch)}")
+    return image, target, sentences, attentions, target_masks, position_masks, text_language_ids, save_prefix
+
+
 def evaluate(model, data_loader, bert_model, device):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -74,7 +85,7 @@ def evaluate(model, data_loader, bert_model, device):
 
         for data in metric_logger.log_every(data_loader, 100, header):
 
-            image, target, sentences, attentions, target_masks, position_masks, save_prefix = data
+            image, target, sentences, attentions, target_masks, position_masks, text_language_ids, save_prefix = _unpack_batch(data)
             image = image.to(device)
             target = target.to(device)
             sentences = sentences.to(device)
@@ -83,6 +94,8 @@ def evaluate(model, data_loader, bert_model, device):
 
             target_masks = target_masks.to(device)
             position_masks = position_masks.to(device)
+            if text_language_ids is not None:
+                text_language_ids = text_language_ids.to(device)
 
             sentences = sentences.squeeze(1)
             attentions = attentions.squeeze(1)
@@ -99,7 +112,7 @@ def evaluate(model, data_loader, bert_model, device):
                     # output = model(image, sentences[:, :, j], l_mask=attentions[:, :, j])
 
                     # output = model(image, sentences[:, :, j], attentions[:, :, j], target_masks[:, :, j], position_masks[:, :, j])
-                    output = model(image, sentences, attentions, target_masks, position_masks)
+                    output = model(image, sentences, attentions, target_masks, position_masks, text_lang_ids=text_language_ids)
 
                 output = output.cpu()
 

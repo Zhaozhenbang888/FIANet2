@@ -14,6 +14,11 @@ from data.nwpu_text_adapter import (
     build_prompt_spec,
     canonicalize_category_name,
     classify_text_language,
+    contains_ascii_letter,
+    contains_cjk,
+    extract_sentence_text,
+    sentence_to_text_language_id,
+    TEXT_LANG_CHINESE_ID,
     text_matches_language_filter,
 )
 
@@ -82,9 +87,16 @@ def _build_samples(data_root, split, language_filter="all"):
             continue
 
         for sent in ref.get("sentences", []):
-            sentence = sent.get("raw", "").strip()
+            sentence = extract_sentence_text(sent)
             if not sentence:
                 continue
+
+            if contains_cjk(sentence) and contains_ascii_letter(sentence):
+                raise ValueError(
+                    "Mixed Chinese-English caption detected in NWPU-refer, but mixed handling is disabled. "
+                    f"split={split}, image_id={img_id}, ann_id={ann_id}, sentence={sentence!r}"
+                )
+
             sentence_language = classify_text_language(sentence)
             language_counter[sentence_language] += 1
             if not text_matches_language_filter(sentence, language_filter):
@@ -186,8 +198,21 @@ class ReferDataset(data.Dataset):
         self.sentences_raw = []
         self.model_sentences = []
         self.pp_phrase = []
+        self.text_language_ids = []
 
         self.tokenizer = BertTokenizer.from_pretrained(args.bert_tokenizer)
+        self.tokenizer_zh = None
+        self._text_route_mode = getattr(args, "text_route_mode", "single")
+        if self._text_route_mode == "dual":
+            zh_tokenizer_name = getattr(args, "bert_tokenizer_zh", "") or args.bert_tokenizer
+            try:
+                self.tokenizer_zh = BertTokenizer.from_pretrained(zh_tokenizer_name)
+            except Exception as exc:
+                print(
+                    f"[Warning][NWPU] Failed to load Chinese tokenizer '{zh_tokenizer_name}': {exc}. "
+                    "Fallback to English tokenizer."
+                )
+                self.tokenizer_zh = None
         self.eval_mode = eval_mode
         target_fallback_count = 0
         position_fallback_count = 0
@@ -200,10 +225,15 @@ class ReferDataset(data.Dataset):
 
             category_name = canonicalize_category_name(self.categories_by_id.get(category_id, {}).get("name", "object"))
             prompt_spec = build_prompt_spec(sentence_raw, category_name)
-            model_sentence = prompt_spec.prompt
-            sentence_tokens = self.tokenizer.tokenize(model_sentence)
+            text_language_id = sentence_to_text_language_id(sentence_raw)
+            use_chinese_route = text_language_id == TEXT_LANG_CHINESE_ID and self.tokenizer_zh is not None
+            active_tokenizer = self.tokenizer_zh if use_chinese_route else self.tokenizer
+
+            # Chinese samples use the original sentence so tokenizer/encoder can keep native CJK context.
+            model_sentence = sentence_raw if use_chinese_route else prompt_spec.prompt
+            sentence_tokens = active_tokenizer.tokenize(model_sentence)
             sentence_tokens = sentence_tokens[: self.max_tokens - 2]
-            input_ids = self.tokenizer.encode(text=model_sentence, add_special_tokens=True)
+            input_ids = active_tokenizer.encode(text=model_sentence, add_special_tokens=True)
             input_ids = input_ids[: self.max_tokens]
 
             padded_input_ids[: len(input_ids)] = input_ids
@@ -211,13 +241,24 @@ class ReferDataset(data.Dataset):
 
             self.input_ids.append([torch.tensor(padded_input_ids).unsqueeze(0)])
             self.attention_masks.append([torch.tensor(attention_mask).unsqueeze(0)])
+            self.text_language_ids.append([torch.tensor([text_language_id], dtype=torch.long)])
 
             self.sentences_raw.append(sentence_raw)
             self.model_sentences.append(model_sentence)
 
+            if use_chinese_route:
+                target_tensor = self.attention_masks[-1][0]
+                position_tensor = self.attention_masks[-1][0]
+                self.target_masks.append([target_tensor])
+                self.position_masks.append([position_tensor])
+                self.pp_phrase.append([])
+                target_fallback_count += 1
+                position_fallback_count += 1
+                continue
+
             matched_target = False
             for phrase in prompt_spec.target_phrases:
-                phrase_tokens = self.tokenizer.tokenize(phrase)
+                phrase_tokens = active_tokenizer.tokenize(phrase)
                 matched_target = _mark_phrase_tokens(target_token_mask, sentence_tokens, phrase_tokens) or matched_target
             target_tensor = torch.tensor(target_token_mask).unsqueeze(0)
             if not matched_target or torch.sum(target_tensor) == 0:
@@ -227,7 +268,7 @@ class ReferDataset(data.Dataset):
 
             matched_position = False
             for phrase in prompt_spec.position_phrases:
-                phrase_tokens = self.tokenizer.tokenize(phrase)
+                phrase_tokens = active_tokenizer.tokenize(phrase)
                 matched_position = _mark_phrase_tokens(position_token_mask, sentence_tokens, phrase_tokens) or matched_position
             position_tensor = torch.tensor(position_token_mask).unsqueeze(0)
             if not matched_position or torch.sum(position_tensor) == 0:
@@ -290,5 +331,6 @@ class ReferDataset(data.Dataset):
         attention_mask = self.attention_masks[index][choice_sent]
         target_mask = self.target_masks[index][choice_sent]
         position_mask = self.position_masks[index][choice_sent]
+        text_language_id = self.text_language_ids[index][choice_sent]
 
-        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, save_prefix
+        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, text_language_id, save_prefix

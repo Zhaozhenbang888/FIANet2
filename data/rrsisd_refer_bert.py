@@ -66,6 +66,7 @@ class ReferDataset(data.Dataset):
         # for ground target and spatial position
         self.target_masks = []
         self.position_masks = []
+        self.text_language_ids = []
 
         self.sentense_raw = []
         self.pp_phrase = []
@@ -171,6 +172,7 @@ class ReferDataset(data.Dataset):
             self.attention_masks.append(attentions_for_ref)
             self.target_masks.append(target_for_ref)
             self.position_masks.append(position_for_ref)
+            self.text_language_ids.append([torch.tensor([0], dtype=torch.long)])
 
 
     def get_classes(self):
@@ -219,6 +221,7 @@ class ReferDataset(data.Dataset):
         attention_mask = self.attention_masks[index][choice_sent]
         target_mask = self.target_masks[index][choice_sent]
         position_mask = self.position_masks[index][choice_sent]
+        text_language_id = self.text_language_ids[index][choice_sent]
 
         # bebug
         # print(img.size(), target.size(), tensor_embeddings.size(), attention_mask.size(),
@@ -226,6 +229,6 @@ class ReferDataset(data.Dataset):
         # print(self.sentense_raw[index])
         # print(self.pp_phrase[index])
         # print(self.position_masks[index])
-        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, save_prefix
+        return img, target, tensor_embeddings, attention_mask, target_mask, position_mask, text_language_id, save_prefix
 
 

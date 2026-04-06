@@ -22,6 +22,24 @@ conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit
 ```shell
 pip install -r requirements.txt
 ```
+
+4. Download NLTK resources used by the English parser:
+```shell
+python - << 'PY'
+import nltk
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
+PY
+```
+
+If you are using newer NLTK versions and still see missing-resource errors, also run:
+```shell
+python - << 'PY'
+import nltk
+nltk.download('punkt_tab')
+nltk.download('averaged_perceptron_tagger_eng')
+PY
+```
 ### The Initialization Weights for Training
 1. Create the `./pretrained_weights` directory where we will be storing the weights.
 ```shell
@@ -33,6 +51,34 @@ and put the `pth` file in `./pretrained_weights`.
 These weights are needed for training to initialize the visual encoder.
 3. Download [BERT weights from HuggingFace’s Transformer library](https://huggingface.co/google-bert/bert-base-uncased), 
 and put it in the root directory. 
+
+4. Download Chinese lexical/model resources (recommended for this project):
+
+We recommend `hfl/chinese-roberta-wwm-ext` for Chinese text encoding. It is robust for Chinese lexical granularity and works with this BERT-compatible code path.
+
+On Linux:
+```shell
+pip install -U "huggingface_hub[cli]"
+mkdir -p ./pretrained_weights/chinese-roberta-wwm-ext
+huggingface-cli download hfl/chinese-roberta-wwm-ext --local-dir ./pretrained_weights/chinese-roberta-wwm-ext
+```
+
+For English resources:
+```shell
+mkdir -p ./pretrained_weights/bert-base-uncased
+huggingface-cli download google-bert/bert-base-uncased --local-dir ./pretrained_weights/bert-base-uncased
+```
+
+Then pass explicit paths when training/testing:
+```shell
+--bert_tokenizer ./pretrained_weights/bert-base-uncased \
+--ck_bert ./pretrained_weights/bert-base-uncased \
+--bert_tokenizer_zh ./pretrained_weights/chinese-roberta-wwm-ext \
+--ck_bert_zh ./pretrained_weights/chinese-roberta-wwm-ext \
+--text_route_mode dual
+```
+
+Note: mixed Chinese-English captions are disabled in NWPU loader. If a mixed sentence appears, data loading will raise an error.
 
 ## Datasets
 We perform the experiments on two dataset including [RefSegRS](https://github.com/zhu-xlab/rrsis) and [RRSIS-D](https://github.com/Lsan2401/RMSIN). 
@@ -52,7 +98,12 @@ python train.py --dataset rrsisd --model_id FIANet --epochs 40 --lr 3e-5 --num_t
 
 For training on NWPU-refer dataset:
 ```shell
-python train.py --dataset nwpu-refer --nwpu_data_root /path/to/NWPU-refer --model_id FIANet --epochs 40 --lr 3e-5 --num_tmem 3
+python train.py --dataset nwpu-refer --nwpu_data_root /path/to/NWPU-refer --model_id FIANet --epochs 40 --lr 3e-5 --num_tmem 3 \
+  --bert_tokenizer ./pretrained_weights/bert-base-uncased \
+  --ck_bert ./pretrained_weights/bert-base-uncased \
+  --bert_tokenizer_zh ./pretrained_weights/chinese-roberta-wwm-ext \
+  --ck_bert_zh ./pretrained_weights/chinese-roberta-wwm-ext \
+  --text_route_mode dual
 ```
 
 For training on RSIBench_dataset:
