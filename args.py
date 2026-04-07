@@ -72,6 +72,16 @@ def get_parser():
                              'when training, window size is inferred from pre-trained weights file name'
                              '(containing \'window12\'). Initialize Swin with window size 12 instead of the default 7.')
     parser.add_argument('-j', '--workers', default=0, type=int, metavar='N', help='number of data loading workers')
+    parser.add_argument(
+        '--cudnn_deterministic',
+        action='store_true',
+        help='force deterministic cuDNN algorithms for reproducibility; may reduce available kernels on some GPUs',
+    )
+    parser.add_argument(
+        '--disable_cudnn',
+        action='store_true',
+        help='disable cuDNN and use native PyTorch CUDA kernels when cuDNN algorithm selection fails',
+    )
     parser.add_argument('--num_tmem', default=1, type=int, help='number of tmem layers')  # 1 for RefSegRS, 3 for RRSIS-D
     parser.add_argument('--grl_hidden_dim', default=256, type=int, help='hidden dim of GRL graph reasoning module')
     parser.add_argument('--grl_num_nodes', default=64, type=int, help='number of visual graph nodes in GRL')

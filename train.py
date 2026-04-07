@@ -24,15 +24,20 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 _loss_fn = None
 
-def seed_everything(seed=2401):
+def seed_everything(seed=2401, cudnn_deterministic=False, disable_cudnn=False):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.enabled = not disable_cudnn
+    if disable_cudnn:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = False
+    else:
+        torch.backends.cudnn.deterministic = bool(cudnn_deterministic)
+        torch.backends.cudnn.benchmark = not bool(cudnn_deterministic)
 
 
 def normalize_dataset_name(dataset_name):
@@ -532,7 +537,10 @@ def main(args):
 
 if __name__ == "__main__":
     from args import get_parser
-    seed_everything()
+    seed_everything(
+        cudnn_deterministic=getattr(args, 'cudnn_deterministic', False),
+        disable_cudnn=getattr(args, 'disable_cudnn', False),
+    )
     parser = get_parser()
     args = parser.parse_args()
     if args.local_rank == 0:
