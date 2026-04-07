@@ -3,6 +3,11 @@ from torch import nn
 from torch.nn import functional as F
 from bert.modeling_bert import BertModel
 
+try:
+    from transformers import BertModel as HFBertModel
+except Exception:
+    HFBertModel = None
+
 
 def load_weights(model, load_path):
     dict_trained = torch.load(load_path)['model']
@@ -57,11 +62,27 @@ class _LAVTOneSimpleDecode(nn.Module):
                 self.text_encoder_zh = BertModel.from_pretrained(zh_ckpt)
                 self.text_encoder_zh.pooler = None
             except Exception as exc:
-                print(
-                    f"[Warning][TextEncoder] Failed to load Chinese text encoder '{zh_ckpt}': {exc}. "
-                    "Fallback to single English text encoder."
-                )
                 self.text_encoder_zh = None
+                if HFBertModel is not None:
+                    try:
+                        self.text_encoder_zh = HFBertModel.from_pretrained(zh_ckpt)
+                        if hasattr(self.text_encoder_zh, "pooler"):
+                            self.text_encoder_zh.pooler = None
+                        print(
+                            f"[Info][TextEncoder] Loaded Chinese text encoder '{zh_ckpt}' via transformers fallback."
+                        )
+                    except Exception as exc_hf:
+                        print(
+                            f"[Warning][TextEncoder] Failed to load Chinese text encoder '{zh_ckpt}' "
+                            f"with local bert ({exc}) and transformers fallback ({exc_hf}). "
+                            "Fallback to single English text encoder."
+                        )
+                        self.text_encoder_zh = None
+                else:
+                    print(
+                        f"[Warning][TextEncoder] Failed to load Chinese text encoder '{zh_ckpt}' with local bert ({exc}), "
+                        "and transformers is unavailable. Fallback to single English text encoder."
+                    )
 
     def _encode_text(self, text, attention_mask, text_lang_ids):
         if self.text_encoder_zh is None or text_lang_ids is None:
