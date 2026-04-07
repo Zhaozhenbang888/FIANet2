@@ -537,12 +537,12 @@ def main(args):
 
 if __name__ == "__main__":
     from args import get_parser
+    parser = get_parser()
+    args = parser.parse_args()
     seed_everything(
         cudnn_deterministic=getattr(args, 'cudnn_deterministic', False),
         disable_cudnn=getattr(args, 'disable_cudnn', False),
     )
-    parser = get_parser()
-    args = parser.parse_args()
     if args.local_rank == 0:
         wandb.init(project="fianet_2080")
     print('Image size: {}'.format(str(args.img_size)))
