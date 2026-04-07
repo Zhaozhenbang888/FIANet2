@@ -24,12 +24,40 @@ NWPU_ENTITIES = {
     "tower", "tower crane", "soccer field"
 }
 
+NWPU_ENTITY_ALIASES = {
+    # common variants observed in prompts and annotations
+    "ground track field", "ground-track-field", "track field", "groundtrackfield",
+    "football court", "football-field", "soccer field",
+    "baseball court", "baseball field", "baseballfield",
+    "basketball court", "basketballcourt",
+    "tennis court", "tenniscourt",
+    "storage tank", "storage-tank", "storagetank",
+    "road intersection", "intersection", "crossroad",
+    "airplaneroad", "runway", "airstrip",
+    "parking", "parking lot", "parking area",
+    "wind turbine", "windturbine", "windmill",
+    "construction tower", "tower crane", "crane",
+}
+
 RRSISD_ENTITIES = {
     # RRSIS-D dataset targets
     "airplane", "airport", "golf field", "expressway service area", "baseball field",
     "stadium", "ground track field", "storage tank", "basketball court", "chimney",
     "tennis court", "overpass", "train station", "ship", "expressway toll station",
     "dam", "harbor", "bridge", "vehicle", "windmill"
+}
+
+RRSISD_ENTITY_ALIASES = {
+    # canonicalized from XML names in RRSIS-D/images/rrsisd/ann_split/*.xml
+    "golffield", "golf field", "golf course",
+    "trainstation", "train station",
+    "storagetank", "storage tank", "storage-tank",
+    "basketballcourt", "basketball court",
+    "tenniscourt", "tennis court",
+    "groundtrackfield", "ground track field", "ground-track-field",
+    "baseballfield", "baseball field", "baseball court",
+    "expressway-service-area", "expressway service area", "service area",
+    "expressway-toll-station", "expressway toll station", "toll station",
 }
 
 REFSEGRS_ENTITIES = {
@@ -63,7 +91,26 @@ RISBENCH_ENTITIES = {
     "lake", "river", "mountain", "desert", "island", "glacier", "volcano"
 }
 
-ENTITY_LEXICON = NWPU_ENTITIES | RRSISD_ENTITIES | REFSEGRS_ENTITIES | RISBENCH_ENTITIES
+RISBENCH_ENTITY_ALIASES = {
+    # extracted from RISBench_dataset/output_phrase_*.txt surface forms
+    "plane", "aircraft", "helicopter",
+    "small vehicle", "large vehicle", "bus",
+    "swimming pool", "pool",
+    "ground-track-field", "ground track field",
+    "soccer ball field", "soccer-ball-shaped field",
+    "container crane", "harbor crane",
+    "roundabout", "overpass",
+}
+
+ENTITY_LEXICON = (
+    NWPU_ENTITIES
+    | NWPU_ENTITY_ALIASES
+    | RRSISD_ENTITIES
+    | RRSISD_ENTITY_ALIASES
+    | REFSEGRS_ENTITIES
+    | RISBENCH_ENTITIES
+    | RISBENCH_ENTITY_ALIASES
+)
 
 
 # ============================================================================
@@ -112,7 +159,29 @@ TEXTURE_ATTRIBUTES = {
     "organized", "disorganized", "chaotic",
 }
 
-ATTRIBUTE_LEXICON = SHAPE_ATTRIBUTES | COLOR_ATTRIBUTES | STATE_ATTRIBUTES | TEXTURE_ATTRIBUTES
+SIZE_ATTRIBUTES = {
+    # very frequent in RISBench text phrases
+    "large", "larger", "largest",
+    "small", "smaller", "smallest",
+    "big", "tiny", "huge",
+}
+
+POSITION_ATTRIBUTES = {
+    # frequent ordinal/position descriptors from phrases
+    "left-most", "right-most", "top-most", "bottom-most",
+    "leftmost", "rightmost", "topmost", "bottommost",
+    "middle", "center", "central",
+    "upper", "lower",
+}
+
+ATTRIBUTE_LEXICON = (
+    SHAPE_ATTRIBUTES
+    | COLOR_ATTRIBUTES
+    | STATE_ATTRIBUTES
+    | TEXTURE_ATTRIBUTES
+    | SIZE_ATTRIBUTES
+    | POSITION_ATTRIBUTES
+)
 
 
 # ============================================================================
@@ -169,10 +238,94 @@ ATTRIBUTE_RELATIONS = {
     "aligned with", "misaligned with",
 }
 
+ACTION_RELATIONS = {
+    # common verbs in RISBench expressions
+    "parked", "docked", "positioned", "located",
+    "spanning", "crossing", "extending",
+    "surrounded by", "adjacent to", "closest to", "nearest to",
+}
+
 RELATION_LEXICON = (
     DIRECTIONAL_RELATIONS | PROXIMITY_RELATIONS | TOPOLOGICAL_RELATIONS |
-    HIERARCHICAL_RELATIONS | ATTRIBUTE_RELATIONS
+    HIERARCHICAL_RELATIONS | ATTRIBUTE_RELATIONS | ACTION_RELATIONS
 )
+
+
+# ============================================================================
+# CHINESE VOCABULARY (NWPU-refer)
+# ============================================================================
+
+NWPU_ENTITIES_ZH = {
+    "汽车", "车辆", "船", "轮船", "舰船", "光伏", "光伏板", "太阳能板", "建筑", "楼房", "飞机", "道路", "公路", "马路",
+    "桥", "篮球场", "集装箱", "火车", "泳池", "游泳池", "储罐", "油罐", "网球场", "田径场", "跑道", "足球场",
+    "电塔", "铁塔", "挖掘机", "风力发电机", "风机", "施工塔", "塔吊", "路口", "道路交叉口", "停车场", "棒球场",
+    "河流", "河", "烟囱", "海", "海洋", "陆地", "橄榄球场", "湖", "湖泊", "草地", "羽毛球场", "大坝"
+}
+
+NWPU_ATTRIBUTES_ZH = {
+    "最大", "最小", "较大", "较小", "白色", "黑色", "红色", "蓝色", "黄色", "绿色", "灰色", "深色", "浅色",
+    "矩形", "圆形", "密集", "稀疏", "连续", "分散"
+}
+
+NWPU_RELATIONS_ZH = {
+    "左侧", "右侧", "左边", "右边", "上方", "下方", "上面", "下面", "左上角", "右上角", "左下角", "右下角",
+    "中间", "附近", "旁边", "道路上", "海上", "河上", "停车场内", "跑道上", "屋顶", "在"
+}
+
+# Canonical maps consumed by GRL Chinese parser.
+CHINESE_ENTITY_CANONICAL = {
+    "汽车": "car", "车辆": "car",
+    "船": "ship", "轮船": "ship", "舰船": "ship",
+    "光伏": "photovolatic", "光伏板": "photovolatic", "太阳能板": "photovolatic",
+    "建筑": "building", "楼房": "building",
+    "飞机": "airplane",
+    "道路": "road", "公路": "road", "马路": "road",
+    "桥": "bridge",
+    "篮球场": "basketball court",
+    "集装箱": "container",
+    "火车": "train",
+    "泳池": "pool", "游泳池": "pool",
+    "储罐": "storage tank", "油罐": "storage tank",
+    "网球场": "tennis court",
+    "田径场": "ground track field", "跑道": "ground track field",
+    "足球场": "football court",
+    "电塔": "pylon", "铁塔": "pylon",
+    "挖掘机": "digger",
+    "风力发电机": "wind turbine", "风机": "wind turbine",
+    "施工塔": "construction tower", "塔吊": "construction tower",
+    "路口": "road intersection", "道路交叉口": "road intersection",
+    "停车场": "parking",
+    "棒球场": "baseball court",
+    "河流": "river", "河": "river",
+    "烟囱": "chimney",
+    "海": "ocean", "海洋": "ocean",
+    "陆地": "land",
+    "橄榄球场": "rugby court",
+    "湖": "lake", "湖泊": "lake",
+    "草地": "grass",
+    "羽毛球场": "badminton court",
+    "大坝": "dam",
+}
+
+CHINESE_ATTRIBUTE_CANONICAL = {
+    "最大": "largest", "最小": "smallest", "较大": "larger", "较小": "smaller",
+    "白色": "white", "黑色": "black", "红色": "red", "蓝色": "blue", "黄色": "yellow", "绿色": "green", "灰色": "gray",
+    "深色": "dark", "浅色": "light", "矩形": "rectangular", "圆形": "circular",
+    "密集": "dense", "稀疏": "sparse", "连续": "continuous", "分散": "dispersed",
+}
+
+CHINESE_RELATION_CANONICAL = {
+    "左侧": ("left", "reference"), "右侧": ("right", "reference"),
+    "左边": ("left", "reference"), "右边": ("right", "reference"),
+    "上方": ("top", "reference"), "下方": ("bottom", "reference"),
+    "上面": ("top", "reference"), "下面": ("bottom", "reference"),
+    "左上角": ("top left", "reference"), "右上角": ("top right", "reference"),
+    "左下角": ("bottom left", "reference"), "右下角": ("bottom right", "reference"),
+    "中间": ("center", "reference"), "附近": ("near", "reference"), "旁边": ("near", "reference"),
+    "道路上": ("on", "modification"), "海上": ("on", "modification"), "河上": ("on", "modification"),
+    "停车场内": ("in", "modification"), "跑道上": ("on", "modification"), "屋顶": ("on", "modification"),
+    "在": ("in", "modification"),
+}
 
 
 # ============================================================================
@@ -181,22 +334,31 @@ RELATION_LEXICON = (
 
 DATASET_LEXICONS = {
     "nwpu": {
-        "entities": NWPU_ENTITIES,
-        "attributes": ATTRIBUTE_LEXICON,
-        "relations": RELATION_LEXICON,
+        "entities": NWPU_ENTITIES | NWPU_ENTITY_ALIASES | NWPU_ENTITIES_ZH,
+        "attributes": ATTRIBUTE_LEXICON | NWPU_ATTRIBUTES_ZH,
+        "relations": RELATION_LEXICON | NWPU_RELATIONS_ZH,
+        "entity_zh_map": CHINESE_ENTITY_CANONICAL,
+        "attribute_zh_map": CHINESE_ATTRIBUTE_CANONICAL,
+        "relation_zh_map": CHINESE_RELATION_CANONICAL,
     },
     "nwpu-refer": {
-        "entities": NWPU_ENTITIES,
-        "attributes": ATTRIBUTE_LEXICON,
-        "relations": RELATION_LEXICON,
+        "entities": NWPU_ENTITIES | NWPU_ENTITY_ALIASES | NWPU_ENTITIES_ZH,
+        "attributes": ATTRIBUTE_LEXICON | NWPU_ATTRIBUTES_ZH,
+        "relations": RELATION_LEXICON | NWPU_RELATIONS_ZH,
+        "entity_zh_map": CHINESE_ENTITY_CANONICAL,
+        "attribute_zh_map": CHINESE_ATTRIBUTE_CANONICAL,
+        "relation_zh_map": CHINESE_RELATION_CANONICAL,
     },
     "nwpurefer": {
-        "entities": NWPU_ENTITIES,
-        "attributes": ATTRIBUTE_LEXICON,
-        "relations": RELATION_LEXICON,
+        "entities": NWPU_ENTITIES | NWPU_ENTITY_ALIASES | NWPU_ENTITIES_ZH,
+        "attributes": ATTRIBUTE_LEXICON | NWPU_ATTRIBUTES_ZH,
+        "relations": RELATION_LEXICON | NWPU_RELATIONS_ZH,
+        "entity_zh_map": CHINESE_ENTITY_CANONICAL,
+        "attribute_zh_map": CHINESE_ATTRIBUTE_CANONICAL,
+        "relation_zh_map": CHINESE_RELATION_CANONICAL,
     },
     "rrsisd": {
-        "entities": RRSISD_ENTITIES,
+        "entities": RRSISD_ENTITIES | RRSISD_ENTITY_ALIASES,
         "attributes": ATTRIBUTE_LEXICON,
         "relations": RELATION_LEXICON,
     },
@@ -206,22 +368,22 @@ DATASET_LEXICONS = {
         "relations": RELATION_LEXICON,
     },
     "risbench": {
-        "entities": RISBENCH_ENTITIES,
+        "entities": RISBENCH_ENTITIES | RISBENCH_ENTITY_ALIASES,
         "attributes": ATTRIBUTE_LEXICON,
         "relations": RELATION_LEXICON,
     },
     "rsibench_dataset": {
-        "entities": RISBENCH_ENTITIES,
+        "entities": RISBENCH_ENTITIES | RISBENCH_ENTITY_ALIASES,
         "attributes": ATTRIBUTE_LEXICON,
         "relations": RELATION_LEXICON,
     },
     "rsibench-dataset": {
-        "entities": RISBENCH_ENTITIES,
+        "entities": RISBENCH_ENTITIES | RISBENCH_ENTITY_ALIASES,
         "attributes": ATTRIBUTE_LEXICON,
         "relations": RELATION_LEXICON,
     },
     "rsibenchdataset": {
-        "entities": RISBENCH_ENTITIES,
+        "entities": RISBENCH_ENTITIES | RISBENCH_ENTITY_ALIASES,
         "attributes": ATTRIBUTE_LEXICON,
         "relations": RELATION_LEXICON,
     },
@@ -229,9 +391,12 @@ DATASET_LEXICONS = {
 
 # Default: use unified lexicon for all datasets
 DEFAULT_LEXICON = {
-    "entities": ENTITY_LEXICON,
-    "attributes": ATTRIBUTE_LEXICON,
-    "relations": RELATION_LEXICON,
+    "entities": ENTITY_LEXICON | NWPU_ENTITIES_ZH,
+    "attributes": ATTRIBUTE_LEXICON | NWPU_ATTRIBUTES_ZH,
+    "relations": RELATION_LEXICON | NWPU_RELATIONS_ZH,
+    "entity_zh_map": CHINESE_ENTITY_CANONICAL,
+    "attribute_zh_map": CHINESE_ATTRIBUTE_CANONICAL,
+    "relation_zh_map": CHINESE_RELATION_CANONICAL,
 }
 
 

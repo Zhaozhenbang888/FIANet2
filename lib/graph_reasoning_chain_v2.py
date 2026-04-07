@@ -1,9 +1,13 @@
 ﻿import math
 from typing import Any, Dict, List, Optional, Tuple
+import re
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+TEXT_LANG_ENGLISH_ID = 0
+TEXT_LANG_CHINESE_ID = 1
 
 try:
     from bert.tokenization_bert import BertTokenizer
@@ -20,13 +24,26 @@ class FineGrainedTextParser:
     step-aware reasoning units for progressive graph reasoning.
     """
 
-    def __init__(self, tokenizer_name: Optional[str] = None, dataset_name: Optional[str] = None):
+    def __init__(
+        self,
+        tokenizer_name: Optional[str] = None,
+        tokenizer_name_zh: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+    ):
         self.tokenizer = None
         if BertTokenizer is not None and tokenizer_name is not None:
             try:
                 self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
             except Exception:
                 self.tokenizer = None
+
+        self.tokenizer_zh = None
+        zh_name = tokenizer_name_zh or tokenizer_name
+        if BertTokenizer is not None and zh_name is not None:
+            try:
+                self.tokenizer_zh = BertTokenizer.from_pretrained(zh_name)
+            except Exception:
+                self.tokenizer_zh = None
 
         lexicon = get_lexicon_for_dataset(dataset_name)
         self.entity_lexicon = set(lexicon["entities"])
@@ -48,9 +65,183 @@ class FineGrainedTextParser:
             "across", "through", "along", "throughout",
         }
 
+        # Chinese lexicon maps raw Chinese terms to canonical English labels used by downstream graph logic.
+        entity_zh_map = lexicon.get("entity_zh_map") or {
+            "汽车": "car", "车辆": "car", "船": "ship", "舰": "ship", "飞机": "airplane",
+            "道路": "road", "公路": "road", "桥": "bridge", "建筑": "building", "停车场": "parking",
+        }
+        attr_zh_map = lexicon.get("attribute_zh_map") or {
+            "最大": "largest", "最小": "smallest", "白色": "white", "黑色": "black", "红色": "red", "蓝色": "blue",
+        }
+        rel_zh_map = lexicon.get("relation_zh_map") or {
+            "左侧": ("left", "reference"), "右侧": ("right", "reference"),
+            "上方": ("top", "reference"), "下方": ("bottom", "reference"),
+            "附近": ("near", "reference"), "在": ("in", "modification"),
+        }
+
+        self.entity_zh_terms: List[Tuple[str, str]] = list(entity_zh_map.items())
+        self.attr_zh_terms: List[Tuple[str, str]] = list(attr_zh_map.items())
+        self.rel_zh_terms: List[Tuple[str, str, str]] = [
+            (zh, canon, rel_type) for zh, (canon, rel_type) in rel_zh_map.items()
+        ]
+
     @staticmethod
     def _strip_token(token: str) -> str:
         return token.lower().replace("##", "")
+
+    @staticmethod
+    def _strip_token_surface(token: str) -> str:
+        tok = token
+        for prefix in ("##", "Ġ", "▁"):
+            if tok.startswith(prefix):
+                tok = tok[len(prefix):]
+        if tok in {"[CLS]", "[SEP]", "[PAD]", "[UNK]", "<s>", "</s>"}:
+            return ""
+        return tok
+
+    @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+    def _build_joined_text_with_spans(self, tokens: List[str]) -> Tuple[str, List[Tuple[int, int]]]:
+        pieces: List[str] = []
+        spans: List[Tuple[int, int]] = []
+        cursor = 0
+        for tok in tokens:
+            surf = self._strip_token_surface(tok)
+            if surf:
+                start = cursor
+                cursor += len(surf)
+                end = cursor
+                pieces.append(surf)
+                spans.append((start, end))
+            else:
+                spans.append((cursor, cursor))
+        return "".join(pieces), spans
+
+    @staticmethod
+    def _char_span_to_token_span(token_char_spans: List[Tuple[int, int]], char_start: int, char_end: int) -> Optional[Tuple[int, int]]:
+        s_idx = None
+        e_idx = None
+        for i, (s, e) in enumerate(token_char_spans):
+            if e <= s:
+                continue
+            if s_idx is None and e > char_start:
+                s_idx = i
+            if s < char_end:
+                e_idx = i
+        if s_idx is None or e_idx is None or e_idx < s_idx:
+            return None
+        return s_idx, e_idx + 1
+
+    def _find_chinese_matches(self, joined_text: str, token_char_spans: List[Tuple[int, int]], term_map: List[Tuple[str, str]]) -> List[Tuple[str, Tuple[int, int]]]:
+        matches: List[Tuple[str, Tuple[int, int]]] = []
+        for needle, canonical in term_map:
+            start = 0
+            while True:
+                idx = joined_text.find(needle, start)
+                if idx < 0:
+                    break
+                span = self._char_span_to_token_span(token_char_spans, idx, idx + len(needle))
+                if span is not None:
+                    matches.append((canonical, span))
+                start = idx + len(needle)
+        matches.sort(key=lambda x: (x[1][0], x[1][1]))
+        return matches
+
+    def _find_chinese_relations(
+        self,
+        joined_text: str,
+        token_char_spans: List[Tuple[int, int]],
+    ) -> List[Tuple[str, Tuple[int, int], str]]:
+        relations: List[Tuple[str, Tuple[int, int], str]] = []
+        for needle, canonical, rel_type in self.rel_zh_terms:
+            start = 0
+            while True:
+                idx = joined_text.find(needle, start)
+                if idx < 0:
+                    break
+                span = self._char_span_to_token_span(token_char_spans, idx, idx + len(needle))
+                if span is not None:
+                    item = (canonical, span, rel_type)
+                    if not any(r[0] == item[0] and r[1] == item[1] for r in relations):
+                        relations.append(item)
+                start = idx + len(needle)
+        relations.sort(key=lambda x: (x[1][0], x[1][1]))
+        return relations
+
+    def _parse_single(
+        self,
+        input_ids: torch.Tensor,
+        valid_len: int,
+        prefer_chinese: bool,
+    ) -> Dict[str, Any]:
+        tokenizer = self.tokenizer_zh if prefer_chinese and self.tokenizer_zh is not None else self.tokenizer
+        if tokenizer is None:
+            return {
+                "target": {"word": None, "token_span": None},
+                "entities": [],
+                "attributes": [],
+                "relations": [],
+                "tokens": [],
+                "entity_attributes": {},
+                "spatial_triplets": [],
+                "entity_tokens_map": {},
+                "attr_tokens_map": {},
+                "rel_tokens_map": {},
+                "reasoning_units": [(0, max(1, valid_len))],
+                "valid_len": max(1, valid_len),
+            }
+
+        ids = input_ids.detach().cpu().tolist()[:valid_len]
+        tokens = tokenizer.convert_ids_to_tokens(ids)
+
+        if prefer_chinese:
+            joined_text, token_char_spans = self._build_joined_text_with_spans(tokens)
+            chinese_like = self._contains_cjk(joined_text)
+        else:
+            joined_text, token_char_spans = "", []
+            chinese_like = False
+
+        if prefer_chinese and chinese_like:
+            entities = self._find_chinese_matches(joined_text, token_char_spans, self.entity_zh_terms)
+            attributes = self._find_chinese_matches(joined_text, token_char_spans, self.attr_zh_terms)
+            relations = self._find_chinese_relations(joined_text, token_char_spans)
+        else:
+            entities = self._find_components(tokens, self.entity_lexicon)
+            attributes = self._find_components(tokens, self.attr_lexicon)
+            relations = self._find_relations_with_type(tokens)
+
+        target = entities[-1] if entities else None
+        entity_attributes = self._build_entity_attribute_map(entities, attributes)
+        spatial_triplets = self._extract_spatial_triplets(entities, relations, target)
+        reasoning_units = self._build_reasoning_units(entities, attributes, relations, valid_len)
+
+        return {
+            "target": {
+                "word": target[0] if target else None,
+                "token_span": target[1] if target else None,
+            },
+            "entities": [
+                {
+                    "word": ew,
+                    "token_span": sp,
+                    "type": "target" if target is not None and ew == target[0] and sp == target[1] else "reference",
+                    "attributes": entity_attributes.get(ew, []),
+                }
+                for ew, sp in entities
+            ],
+            "attributes": [{"word": aw, "token_span": sp} for aw, sp in attributes],
+            "relations": [{"word": rw, "token_span": sp, "relation_type": rt} for rw, sp, rt in relations],
+            "tokens": tokens,
+            "entity_attributes": entity_attributes,
+            "spatial_triplets": spatial_triplets,
+            "entity_tokens_map": self._build_tokens_map(entities),
+            "attr_tokens_map": self._build_tokens_map(attributes),
+            "rel_tokens_map": self._build_tokens_map([(r[0], r[1]) for r in relations]),
+            "reasoning_units": reasoning_units,
+            "valid_len": valid_len,
+        }
 
     def _find_components(self, tokens: List[str], lexicon: set) -> List[Tuple[str, Tuple[int, int]]]:
         components: List[Tuple[str, Tuple[int, int]]] = []
@@ -203,6 +394,7 @@ class FineGrainedTextParser:
         self,
         input_ids: Optional[torch.Tensor],
         l_mask: Optional[torch.Tensor],
+        text_lang_ids: Optional[torch.Tensor] = None,
     ) -> List[Dict[str, Any]]:
         if l_mask is None:
             raise ValueError("l_mask is required for text parsing")
@@ -213,13 +405,29 @@ class FineGrainedTextParser:
             l_mask_2d = l_mask
 
         B, N = l_mask_2d.shape
+        if text_lang_ids is not None:
+            if text_lang_ids.dim() > 1:
+                lang_ids = text_lang_ids.view(text_lang_ids.size(0), -1)[:, 0]
+            else:
+                lang_ids = text_lang_ids
+            lang_ids = lang_ids.detach().cpu().long().view(-1)
+        else:
+            lang_ids = torch.full((B,), TEXT_LANG_ENGLISH_ID, dtype=torch.long)
+
+        if lang_ids.numel() < B:
+            padded = torch.full((B,), TEXT_LANG_ENGLISH_ID, dtype=torch.long)
+            padded[:lang_ids.numel()] = lang_ids
+            lang_ids = padded
+        elif lang_ids.numel() > B:
+            lang_ids = lang_ids[:B]
+
         results: List[Dict[str, Any]] = []
 
         for b in range(B):
             valid_len = int(l_mask_2d[b].float().sum().item())
             valid_len = max(1, min(valid_len, N))
 
-            if self.tokenizer is None or input_ids is None:
+            if input_ids is None:
                 results.append(
                     {
                         "target": {"word": None, "token_span": None},
@@ -237,46 +445,8 @@ class FineGrainedTextParser:
                     }
                 )
                 continue
-
-            ids = input_ids[b].detach().cpu().tolist()[:valid_len]
-            tokens = self.tokenizer.convert_ids_to_tokens(ids)
-
-            entities = self._find_components(tokens, self.entity_lexicon)
-            attributes = self._find_components(tokens, self.attr_lexicon)
-            relations = self._find_relations_with_type(tokens)
-
-            target = entities[-1] if entities else None
-            entity_attributes = self._build_entity_attribute_map(entities, attributes)
-            spatial_triplets = self._extract_spatial_triplets(entities, relations, target)
-            reasoning_units = self._build_reasoning_units(entities, attributes, relations, valid_len)
-
-            results.append(
-                {
-                    "target": {
-                        "word": target[0] if target else None,
-                        "token_span": target[1] if target else None,
-                    },
-                    "entities": [
-                        {
-                            "word": ew,
-                            "token_span": sp,
-                            "type": "target" if target is not None and ew == target[0] and sp == target[1] else "reference",
-                            "attributes": entity_attributes.get(ew, []),
-                        }
-                        for ew, sp in entities
-                    ],
-                    "attributes": [{"word": aw, "token_span": sp} for aw, sp in attributes],
-                    "relations": [{"word": rw, "token_span": sp, "relation_type": rt} for rw, sp, rt in relations],
-                    "tokens": tokens,
-                    "entity_attributes": entity_attributes,
-                    "spatial_triplets": spatial_triplets,
-                    "entity_tokens_map": self._build_tokens_map(entities),
-                    "attr_tokens_map": self._build_tokens_map(attributes),
-                    "rel_tokens_map": self._build_tokens_map([(r[0], r[1]) for r in relations]),
-                    "reasoning_units": reasoning_units,
-                    "valid_len": valid_len,
-                }
-            )
+            prefer_chinese = int(lang_ids[b].item()) == TEXT_LANG_CHINESE_ID
+            results.append(self._parse_single(input_ids[b], valid_len, prefer_chinese))
 
         return results
 
@@ -342,8 +512,11 @@ class GraphReasoningChain(nn.Module):
         num_reasoning_steps: int = 2,
         num_steps: Optional[int] = None,
         dropout: float = 0.1,
+        residual_scale: float = 0.2,
+        residual_clip: float = 1.0,
         grl_mode: str = "full",
         tokenizer_name: Optional[str] = None,
+        tokenizer_name_zh: Optional[str] = None,
         dataset_name: Optional[str] = None,
     ):
         super().__init__()
@@ -361,6 +534,8 @@ class GraphReasoningChain(nn.Module):
         if grl_mode not in valid_modes:
             raise ValueError(f"Unsupported grl_mode={grl_mode}. Expected one of {sorted(valid_modes)}")
         self.grl_mode = grl_mode
+        self.residual_scale = float(residual_scale)
+        self.residual_clip = float(residual_clip)
 
         self.visual_proj = nn.Conv2d(in_channels, hidden_dim, kernel_size=1)
         self.text_proj = nn.Conv1d(text_dim, hidden_dim, kernel_size=1)
@@ -424,7 +599,11 @@ class GraphReasoningChain(nn.Module):
         self.alpha = nn.Parameter(torch.tensor(0.0))
         self.refine_alpha = nn.Parameter(torch.tensor(0.0))
 
-        self.text_parser = FineGrainedTextParser(tokenizer_name=tokenizer_name, dataset_name=dataset_name)
+        self.text_parser = FineGrainedTextParser(
+            tokenizer_name=tokenizer_name,
+            tokenizer_name_zh=tokenizer_name_zh,
+            dataset_name=dataset_name,
+        )
 
     @staticmethod
     def _build_unparsed_batch(l_mask: torch.Tensor) -> List[Dict[str, Any]]:
@@ -455,6 +634,59 @@ class GraphReasoningChain(nn.Module):
                 }
             )
         return batch
+
+    @staticmethod
+    def _normalize_text_lang_ids(text_lang_ids: Optional[torch.Tensor], batch_size: int, device: torch.device) -> torch.Tensor:
+        if text_lang_ids is None:
+            return torch.full((batch_size,), TEXT_LANG_ENGLISH_ID, dtype=torch.long, device=device)
+
+        if text_lang_ids.dim() > 1:
+            lang_ids = text_lang_ids.view(text_lang_ids.size(0), -1)[:, 0]
+        else:
+            lang_ids = text_lang_ids
+
+        lang_ids = lang_ids.to(device=device, dtype=torch.long).view(-1)
+        if lang_ids.numel() < batch_size:
+            padded = torch.full((batch_size,), TEXT_LANG_ENGLISH_ID, dtype=torch.long, device=device)
+            padded[:lang_ids.numel()] = lang_ids
+            return padded
+        if lang_ids.numel() > batch_size:
+            return lang_ids[:batch_size]
+        return lang_ids
+
+    def _build_routed_parse_batch(
+        self,
+        text_ids: Optional[torch.Tensor],
+        l_mask: torch.Tensor,
+        text_lang_ids: Optional[torch.Tensor],
+    ) -> List[Dict[str, Any]]:
+        if l_mask.dim() == 3:
+            l_mask_2d = l_mask.squeeze(-1)
+        else:
+            l_mask_2d = l_mask
+
+        batch_size = l_mask_2d.size(0)
+        if text_ids is None:
+            return self._build_unparsed_batch(l_mask_2d)
+
+        lang_ids = self._normalize_text_lang_ids(text_lang_ids, batch_size, l_mask_2d.device)
+        parse_batch: List[Dict[str, Any]] = []
+
+        for b in range(batch_size):
+            sample_text_ids = text_ids[b:b + 1]
+            sample_mask = l_mask_2d[b:b + 1]
+            lang_id = int(lang_ids[b].item())
+
+            lang_tensor = torch.tensor([lang_id], dtype=torch.long)
+            parse_result = self.text_parser.parse_batch_detailed(
+                sample_text_ids,
+                sample_mask,
+                text_lang_ids=lang_tensor,
+            )[0]
+
+            parse_batch.append(parse_result)
+
+        return parse_batch
 
     @staticmethod
     def _masked_mean(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -781,6 +1013,7 @@ class GraphReasoningChain(nn.Module):
         l: torch.Tensor,
         l_mask: torch.Tensor,
         text_ids: Optional[torch.Tensor] = None,
+        text_lang_ids: Optional[torch.Tensor] = None,
         t_mask: Optional[torch.Tensor] = None,
         p_mask: Optional[torch.Tensor] = None,
         text_struct: Optional[Dict[str, Any]] = None,
@@ -806,7 +1039,7 @@ class GraphReasoningChain(nn.Module):
         elif text_struct is not None and isinstance(text_struct, dict) and "target" in text_struct:
             parse_batch = [text_struct for _ in range(B)]
         else:
-            parse_batch = self.text_parser.parse_batch_detailed(text_ids, l_mask)
+            parse_batch = self._build_routed_parse_batch(text_ids, l_mask, text_lang_ids)
 
         refined_dense = []
         for b in range(B):
@@ -905,4 +1138,9 @@ class GraphReasoningChain(nn.Module):
         delta = self.reconstruct(vis_refined_map)
         delta = delta * (1.0 + torch.tanh(self.refine_alpha) * seg_gate)
 
-        return x + torch.tanh(self.alpha) * delta
+        residual = torch.tanh(self.alpha) * delta
+        residual = torch.nan_to_num(residual, nan=0.0, posinf=0.0, neginf=0.0)
+        if self.residual_clip > 0:
+            residual = residual.clamp(min=-self.residual_clip, max=self.residual_clip)
+
+        return x + self.residual_scale * residual

@@ -54,8 +54,11 @@ def _segm_lavt(pretrained, args):
                                          grl_num_nodes=getattr(args, 'grl_num_nodes', 64),
                                          grl_num_steps=getattr(args, 'grl_num_steps', 2),
                                          grl_drop=getattr(args, 'grl_drop', 0.1),
+                                         grl_residual_scale=getattr(args, 'grl_residual_scale', 0.2),
+                                         grl_residual_clip=getattr(args, 'grl_residual_clip', 1.0),
                                          grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
+                                         grl_tokenizer_name_zh=getattr(args, 'bert_tokenizer_zh', getattr(args, 'bert_tokenizer', None)),
                                          grl_dataset_name=getattr(args, 'dataset', None),
                                          debug_diagnostics=getattr(args, 'debug_diagnostics', False),
                                          debug_log_first_n=getattr(args, 'debug_log_first_n', 3)
@@ -133,8 +136,11 @@ def _segm_lavt_one(pretrained, args):
                                          grl_num_nodes=getattr(args, 'grl_num_nodes', 64),
                                          grl_num_steps=getattr(args, 'grl_num_steps', 2),
                                          grl_drop=getattr(args, 'grl_drop', 0.1),
+                                         grl_residual_scale=getattr(args, 'grl_residual_scale', 0.2),
+                                         grl_residual_clip=getattr(args, 'grl_residual_clip', 1.0),
                                          grl_mode=getattr(args, 'grl_mode', 'full'),
                                          grl_tokenizer_name=getattr(args, 'bert_tokenizer', None),
+                                         grl_tokenizer_name_zh=getattr(args, 'bert_tokenizer_zh', getattr(args, 'bert_tokenizer', None)),
                                          grl_dataset_name=getattr(args, 'dataset', None),
                                          debug_diagnostics=getattr(args, 'debug_diagnostics', False),
                                          debug_log_first_n=getattr(args, 'debug_log_first_n', 3)

@@ -118,15 +118,8 @@ class _LAVTOneSimpleDecode(nn.Module):
         p_feats = p_feats.permute(0, 2, 1)  # (B, 768, N_l)
         p_mask = p_mask.unsqueeze(dim=-1)  # (batch, N_l, 1)
 
+        # Keep raw token ids for GRL and let GRL route parser behavior per-sample.
         text_ids_for_grl = text
-        if self.text_encoder_zh is not None and text_lang_ids is not None:
-            if text_lang_ids.dim() > 1:
-                lang_view = text_lang_ids.view(text_lang_ids.size(0), -1)[:, 0]
-            else:
-                lang_view = text_lang_ids
-            if torch.any(lang_view.to(text.device).long() == 1):
-                # Avoid decoding Chinese-tokenizer ids with English GRL tokenizer.
-                text_ids_for_grl = None
 
         ##########################
         features = self.backbone(
@@ -138,6 +131,7 @@ class _LAVTOneSimpleDecode(nn.Module):
             p_feats,
             p_mask,
             text_ids=text_ids_for_grl,
+            text_lang_ids=text_lang_ids,
         )
         x_c1, x_c2, x_c3, x_c4  = features   # e.g. x_c1:[B, 128, 120, 120], x_c2:[B, 256, 60, 60], x_c3:[B, 512, 30, 30], x_c4:[B, 1024, 15, 15]
         x = self.classifier(x_c4, x_c3, x_c2, x_c1)

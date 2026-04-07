@@ -425,8 +425,11 @@ class MultiModalSwinTransformer(nn.Module):
                  grl_num_nodes=64,
                  grl_num_steps=2,
                  grl_drop=0.1,
+                 grl_residual_scale=0.2,
+                 grl_residual_clip=1.0,
                  grl_mode='full',
                  grl_tokenizer_name=None,
+                 grl_tokenizer_name_zh=None,
                  grl_dataset_name=None,
                  debug_diagnostics=False,
                  debug_log_first_n=3
@@ -504,8 +507,11 @@ class MultiModalSwinTransformer(nn.Module):
             num_visual_nodes=grl_num_nodes,
             num_steps=grl_num_steps,
             dropout=grl_drop,
+            residual_scale=grl_residual_scale,
+            residual_clip=grl_residual_clip,
             grl_mode=grl_mode,
             tokenizer_name=grl_tokenizer_name,
+            tokenizer_name_zh=grl_tokenizer_name_zh,
             dataset_name=grl_dataset_name,
         )
         self._freeze_stages()
@@ -553,7 +559,7 @@ class MultiModalSwinTransformer(nn.Module):
         else:
             raise TypeError('pretrained must be a str or None')
 
-    def forward(self, x, l, l_mask, t=None, t_mask=None, p=None, p_mask=None, text_ids=None, text_struct=None):
+    def forward(self, x, l, l_mask, t=None, t_mask=None, p=None, p_mask=None, text_ids=None, text_lang_ids=None, text_struct=None):
         """Forward function."""
         if t is None:
             t = l
@@ -596,6 +602,7 @@ class MultiModalSwinTransformer(nn.Module):
             l,
             l_mask,
             text_ids=text_ids,
+            text_lang_ids=text_lang_ids,
             t_mask=t_mask,
             p_mask=p_mask,
             text_struct=text_struct,

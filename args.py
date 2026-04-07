@@ -78,6 +78,18 @@ def get_parser():
     parser.add_argument('--grl_num_steps', default=2, type=int, help='number of GAT+GCN reasoning steps in GRL')
     parser.add_argument('--grl_drop', default=0.1, type=float, help='dropout rate for GRL graph attention')
     parser.add_argument(
+        '--grl_residual_scale',
+        default=0.2,
+        type=float,
+        help='global scale for GRL residual injection; lower values make GRL updates more conservative',
+    )
+    parser.add_argument(
+        '--grl_residual_clip',
+        default=1.0,
+        type=float,
+        help='clip value for GRL residual delta before injecting back to visual features; set <=0 to disable',
+    )
+    parser.add_argument(
         '--grl_mode',
         default='full',
         choices=['full', 'no_parser', 'off'],
